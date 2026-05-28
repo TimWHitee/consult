@@ -1,0 +1,24 @@
+version: "3.9"
+
+services:
+  creator:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    container_name: skud_creator
+    restart: unless-stopped
+    working_dir: /app/creator
+    command: python main.py
+    volumes:
+      - ..:/app
+
+  scanner:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    container_name: skud_scanner
+    restart: unless-stopped
+    working_dir: /app/scanner
+    command: python main.py
+    volumes:
+      - ..:/app
