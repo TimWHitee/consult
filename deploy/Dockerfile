@@ -17,6 +17,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Копируем весь проект сохраняя структуру
 COPY creator/ ./creator/
 COPY scanner/ ./scanner/
+COPY api/ ./api/
 
 # Папки которые создаются в рантайме
-RUN mkdir -p qr_codes qr_scans face_photos
+RUN mkdir -p qr_codes qr_scans face_photos storage

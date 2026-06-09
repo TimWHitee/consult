@@ -1,6 +1,22 @@
 version: "3.9"
 
 services:
+  api:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    container_name: skud_api
+    restart: unless-stopped
+    working_dir: /app
+    command: uvicorn api.app:app --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000"
+    volumes:
+      - ..:/app
+    environment:
+      SKUD_API_DB_PATH: /app/skud_api.db
+      SKUD_STORAGE_DIR: /app/storage
+
   creator:
     build:
       context: ..
