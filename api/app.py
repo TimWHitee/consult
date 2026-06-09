@@ -4,6 +4,8 @@ from typing import Annotated, Any
 
 from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
+from fastapi.staticfiles import StaticFiles
 
 from . import face
 from .config import config
@@ -46,6 +48,15 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+admin_dir = Path(__file__).resolve().parent.parent / "admin"
+if admin_dir.exists():
+    app.mount("/admin", StaticFiles(directory=admin_dir, html=True), name="admin")
+
+
+@app.get("/")
+def root() -> RedirectResponse:
+    return RedirectResponse(url="/admin/")
 
 
 @app.on_event("startup")

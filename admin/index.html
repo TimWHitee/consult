@@ -1,0 +1,400 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SKUD Admin</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">S</div>
+          <div>
+            <div class="brand-name">SKUD Admin</div>
+            <div class="brand-subtitle" id="companyLabel">Компания не выбрана</div>
+          </div>
+        </div>
+        <nav class="nav" aria-label="Разделы">
+          <button class="nav-item active" data-view="dashboard">Обзор</button>
+          <button class="nav-item" data-view="employees">Сотрудники</button>
+          <button class="nav-item" data-view="rooms">Помещения</button>
+          <button class="nav-item" data-view="access">Доступы</button>
+          <button class="nav-item" data-view="scanners">Сканеры</button>
+          <button class="nav-item" data-view="events">Журнал</button>
+          <button class="nav-item" data-view="setup">Настройка</button>
+        </nav>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <div>
+            <h1 id="viewTitle">Обзор</h1>
+            <p id="viewSubtitle">Состояние офиса, проходы и текущая занятость помещений.</p>
+          </div>
+          <div class="connection">
+            <input id="apiBaseInput" type="url" placeholder="http://localhost:8000" />
+            <input id="apiKeyInput" type="password" placeholder="X-API-Key" />
+            <button id="saveConnectionBtn" class="button primary">Подключить</button>
+          </div>
+        </header>
+
+        <div id="notice" class="notice hidden" role="status"></div>
+
+        <section id="dashboard" class="view active">
+          <div class="metrics-grid">
+            <div class="metric">
+              <span class="metric-label">Сотрудники</span>
+              <strong id="metricEmployees">0</strong>
+            </div>
+            <div class="metric">
+              <span class="metric-label">Помещения</span>
+              <strong id="metricRooms">0</strong>
+            </div>
+            <div class="metric">
+              <span class="metric-label">Людей внутри</span>
+              <strong id="metricInside">0</strong>
+            </div>
+            <div class="metric">
+              <span class="metric-label">Проходов сегодня</span>
+              <strong id="metricToday">0</strong>
+            </div>
+          </div>
+
+          <div class="layout-two">
+            <section class="panel">
+              <div class="panel-head">
+                <h2>Занятость помещений</h2>
+                <button class="button ghost" data-refresh>Обновить</button>
+              </div>
+              <div id="occupancyList" class="occupancy-list"></div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-head">
+                <h2>Последние события</h2>
+                <button class="button ghost" data-view-target="events">Открыть журнал</button>
+              </div>
+              <div class="table-wrap compact">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Время</th>
+                      <th>Метод</th>
+                      <th>Решение</th>
+                      <th>Причина</th>
+                    </tr>
+                  </thead>
+                  <tbody id="recentEventsBody"></tbody>
+                </table>
+              </div>
+            </section>
+          </div>
+
+          <section class="panel">
+            <div class="panel-head">
+              <h2>Проходимость</h2>
+            </div>
+            <div id="throughputBars" class="bars"></div>
+          </section>
+        </section>
+
+        <section id="employees" class="view">
+          <div class="layout-two">
+            <section class="panel">
+              <div class="panel-head">
+                <h2>Новый сотрудник</h2>
+              </div>
+              <form id="employeeForm" class="form-grid">
+                <label>ФИО<input name="full_name" required /></label>
+                <label>Табельный ID<input name="external_id" /></label>
+                <label>Должность<input name="position" /></label>
+                <label>Email<input name="email" type="email" /></label>
+                <label>Телефон<input name="phone" /></label>
+                <label>Статус
+                  <select name="status">
+                    <option value="active">active</option>
+                    <option value="suspended">suspended</option>
+                  </select>
+                </label>
+                <button class="button primary span-2" type="submit">Добавить сотрудника</button>
+              </form>
+            </section>
+
+            <section class="panel">
+              <div class="panel-head">
+                <h2>Face-профиль и QR</h2>
+              </div>
+              <form id="faceForm" class="stack">
+                <label>Сотрудник<select name="employee_id" data-employee-select required></select></label>
+                <label>Фото лица<input name="file" type="file" accept="image/*" required /></label>
+                <button class="button primary" type="submit">Загрузить фото</button>
+              </form>
+              <form id="qrForm" class="inline-form">
+                <select name="employee_id" data-employee-select required></select>
+                <input name="ttl_hours" type="number" min="1" value="12" />
+                <button class="button" type="submit">Выпустить QR</button>
+              </form>
+              <textarea id="qrPayloadOutput" class="code-output" readonly placeholder="Payload QR появится здесь после выпуска"></textarea>
+            </section>
+          </div>
+
+          <section class="panel">
+            <div class="panel-head">
+              <h2>Список сотрудников</h2>
+              <input id="employeeSearch" class="search" placeholder="Поиск" />
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>ФИО</th>
+                    <th>Табельный</th>
+                    <th>Должность</th>
+                    <th>Контакты</th>
+                    <th>Статус</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="employeesBody"></tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+
+        <section id="rooms" class="view">
+          <div class="layout-two">
+            <section class="panel">
+              <div class="panel-head">
+                <h2>Новое помещение</h2>
+              </div>
+              <form id="roomForm" class="form-grid">
+                <label>Название<input name="name" required /></label>
+                <label>Код<input name="code" required /></label>
+                <label>Вместимость<input name="capacity" type="number" min="0" /></label>
+                <label>Статус
+                  <select name="status">
+                    <option value="active">active</option>
+                    <option value="inactive">inactive</option>
+                  </select>
+                </label>
+                <label class="span-2">Описание<textarea name="description"></textarea></label>
+                <button class="button primary span-2" type="submit">Добавить помещение</button>
+              </form>
+            </section>
+
+            <section class="panel">
+              <div class="panel-head">
+                <h2>Сейчас внутри</h2>
+              </div>
+              <div id="roomOccupancySummary" class="occupancy-list"></div>
+            </section>
+          </div>
+
+          <section class="panel">
+            <div class="panel-head">
+              <h2>Помещения</h2>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Название</th>
+                    <th>Код</th>
+                    <th>Вместимость</th>
+                    <th>Статус</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="roomsBody"></tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+
+        <section id="access" class="view">
+          <div class="layout-two">
+            <section class="panel">
+              <div class="panel-head">
+                <h2>Правило доступа</h2>
+              </div>
+              <form id="accessForm" class="form-grid">
+                <label>Сотрудник<select name="employee_id" data-employee-select required></select></label>
+                <label>Помещение<select name="room_id" data-room-select required></select></label>
+                <label>Начало<input name="valid_from" type="datetime-local" /></label>
+                <label>Окончание<input name="valid_until" type="datetime-local" /></label>
+                <div class="method-group span-2">
+                  <label><input type="checkbox" name="method_qr" checked /> QR</label>
+                  <label><input type="checkbox" name="method_face" checked /> Face</label>
+                  <label><input type="checkbox" name="is_active" checked /> Активно</label>
+                </div>
+                <button class="button primary span-2" type="submit">Сохранить правило</button>
+              </form>
+            </section>
+
+            <section class="panel">
+              <div class="panel-head">
+                <h2>Фильтр</h2>
+              </div>
+              <div class="stack">
+                <label>Сотрудник<select id="ruleEmployeeFilter" data-employee-select></select></label>
+                <label>Помещение<select id="ruleRoomFilter" data-room-select></select></label>
+                <button id="resetRuleFilters" class="button">Сбросить</button>
+              </div>
+            </section>
+          </div>
+
+          <section class="panel">
+            <div class="panel-head">
+              <h2>Правила</h2>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Сотрудник</th>
+                    <th>Помещение</th>
+                    <th>Методы</th>
+                    <th>Период</th>
+                    <th>Статус</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="rulesBody"></tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+
+        <section id="scanners" class="view">
+          <div class="layout-two">
+            <section class="panel">
+              <div class="panel-head">
+                <h2>Новый сканер</h2>
+              </div>
+              <form id="scannerForm" class="form-grid">
+                <label>Название<input name="name" required /></label>
+                <label>Помещение<select name="room_id" data-room-select required></select></label>
+                <label>Направление
+                  <select name="direction">
+                    <option value="entry">entry</option>
+                    <option value="exit">exit</option>
+                  </select>
+                </label>
+                <label>Статус
+                  <select name="status">
+                    <option value="active">active</option>
+                    <option value="inactive">inactive</option>
+                  </select>
+                </label>
+                <div class="method-group span-2">
+                  <label><input type="checkbox" name="method_qr" checked /> QR</label>
+                  <label><input type="checkbox" name="method_face" checked /> Face</label>
+                </div>
+                <button class="button primary span-2" type="submit">Создать сканер</button>
+              </form>
+            </section>
+
+            <section class="panel">
+              <div class="panel-head">
+                <h2>Токен сканера</h2>
+              </div>
+              <textarea id="scannerTokenOutput" class="code-output" readonly placeholder="Токен появится здесь после создания сканера"></textarea>
+            </section>
+          </div>
+
+          <section class="panel">
+            <div class="panel-head">
+              <h2>Сканеры</h2>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Название</th>
+                    <th>Помещение</th>
+                    <th>Направление</th>
+                    <th>Методы</th>
+                    <th>Статус</th>
+                    <th>Последний сигнал</th>
+                  </tr>
+                </thead>
+                <tbody id="scannersBody"></tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+
+        <section id="events" class="view">
+          <section class="panel">
+            <div class="panel-head">
+              <h2>Журнал проходов</h2>
+              <div class="filters">
+                <select id="eventEmployeeFilter" data-employee-select></select>
+                <select id="eventRoomFilter" data-room-select></select>
+                <select id="eventDecisionFilter">
+                  <option value="">Все решения</option>
+                  <option value="granted">granted</option>
+                  <option value="denied">denied</option>
+                </select>
+                <button id="loadEventsBtn" class="button">Применить</button>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Время</th>
+                    <th>Сотрудник</th>
+                    <th>Помещение</th>
+                    <th>Сканер</th>
+                    <th>Метод</th>
+                    <th>Решение</th>
+                    <th>Причина</th>
+                  </tr>
+                </thead>
+                <tbody id="eventsBody"></tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+
+        <section id="setup" class="view">
+          <div class="layout-two">
+            <section class="panel">
+              <div class="panel-head">
+                <h2>Создать компанию</h2>
+              </div>
+              <form id="setupForm" class="form-grid">
+                <label>Название<input name="name" required /></label>
+                <label>Slug<input name="slug" required pattern="[a-z0-9][a-z0-9-]{1,62}[a-z0-9]" /></label>
+                <label class="span-2">Bootstrap token<input name="bootstrap_token" type="password" required value="bootstrap-change-me" /></label>
+                <button class="button primary span-2" type="submit">Создать и подключить</button>
+              </form>
+            </section>
+
+            <section class="panel">
+              <div class="panel-head">
+                <h2>Состояние подключения</h2>
+              </div>
+              <dl class="details">
+                <div><dt>API</dt><dd id="connectionApi">-</dd></div>
+                <div><dt>Компания</dt><dd id="connectionCompany">-</dd></div>
+                <div><dt>Ключ</dt><dd id="connectionKey">-</dd></div>
+              </dl>
+              <button id="clearConnectionBtn" class="button danger">Сбросить подключение</button>
+            </section>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
