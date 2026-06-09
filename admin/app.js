@@ -69,7 +69,8 @@ function bindForms() {
   });
 
   $("#setupForm").addEventListener("submit", setupCompany);
-  $("#employeeForm").addEventListener("submit", createEmployee);
+  $("#employeeForm").addEventListener("submit", saveEmployee);
+  $("#employeeCancelBtn").addEventListener("click", resetEmployeeForm);
   $("#roomForm").addEventListener("submit", createRoom);
   $("#accessForm").addEventListener("submit", saveAccessRule);
   $("#scannerForm").addEventListener("submit", createScanner);
@@ -241,9 +242,11 @@ function renderEmployees() {
           <td>${statusBadge(employee.status)}</td>
           <td>
             <div class="row-actions">
+              <button class="button" data-employee-edit="${employee.id}">Редактировать</button>
               <button class="button" data-employee-status="${employee.id}" data-status="${employee.status === "active" ? "suspended" : "active"}">
                 ${employee.status === "active" ? "Отключить" : "Активировать"}
               </button>
+              <button class="button danger" data-employee-delete="${employee.id}">Удалить</button>
             </div>
           </td>
         </tr>
@@ -251,8 +254,14 @@ function renderEmployees() {
     )
     .join("");
 
+  $$("[data-employee-edit]").forEach((button) => {
+    button.addEventListener("click", () => editEmployee(button.dataset.employeeEdit));
+  });
   $$("[data-employee-status]").forEach((button) => {
     button.addEventListener("click", () => updateEmployeeStatus(button.dataset.employeeStatus, button.dataset.status));
+  });
+  $$("[data-employee-delete]").forEach((button) => {
+    button.addEventListener("click", () => deleteEmployee(button.dataset.employeeDelete));
   });
 }
 
@@ -443,11 +452,47 @@ async function setupCompany(event) {
   }
 }
 
-async function createEmployee(event) {
+async function saveEmployee(event) {
   event.preventDefault();
   const formElement = event.currentTarget;
-  const payload = formObject(formElement);
-  await submitAndRefresh("/api/v1/employees", payload, formElement);
+  const form = new FormData(formElement);
+  const employeeId = form.get("employee_id");
+  const payload = cleanPayload({
+    full_name: form.get("full_name"),
+    external_id: form.get("external_id"),
+    position: form.get("position"),
+    email: form.get("email"),
+    phone: form.get("phone"),
+    status: form.get("status"),
+  });
+  const credentials = cleanPayload({
+    login: form.get("login"),
+    password: form.get("password"),
+  });
+
+  try {
+    if (!employeeId && credentials.login && !credentials.password) {
+      throw new Error("Для создания доступа сотрудника укажите пароль или оставьте логин пустым.");
+    }
+    if (employeeId) {
+      await api(`/api/v1/employees/${employeeId}`, { method: "PATCH", body: JSON.stringify(payload) });
+      if (credentials.login || credentials.password) {
+        if (!credentials.login || !credentials.password) {
+          throw new Error("Для обновления доступа сотрудника укажите и логин, и пароль.");
+        }
+        await api(`/api/v1/employees/${employeeId}/credentials`, { method: "POST", body: JSON.stringify(credentials) });
+      }
+      showNotice("Сотрудник обновлен.");
+      resetEmployeeForm();
+    } else {
+      await api("/api/v1/employees", { method: "POST", body: JSON.stringify({ ...payload, ...credentials }) });
+      formElement.reset();
+      showNotice("Сотрудник добавлен.");
+    }
+    await refreshAll();
+  } catch (error) {
+    showNotice(error.message, true);
+  }
 }
 
 async function createRoom(event) {
@@ -532,6 +577,54 @@ async function createQrPass(event) {
     });
     $("#qrPayloadOutput").value = result.payload;
     showNotice("QR-пропуск выпущен.");
+  } catch (error) {
+    showNotice(error.message, true);
+  }
+}
+
+function editEmployee(id) {
+  const employee = state.employees.find((item) => String(item.id) === String(id));
+  if (!employee) {
+    showNotice("Сотрудник не найден.", true);
+    return;
+  }
+  const form = $("#employeeForm");
+  form.elements.employee_id.value = employee.id;
+  form.elements.full_name.value = employee.full_name || "";
+  form.elements.external_id.value = employee.external_id || "";
+  form.elements.position.value = employee.position || "";
+  form.elements.email.value = employee.email || "";
+  form.elements.phone.value = employee.phone || "";
+  form.elements.status.value = employee.status || "active";
+  form.elements.login.value = "";
+  form.elements.password.value = "";
+  $("#employeeFormTitle").textContent = "Редактирование сотрудника";
+  $("#employeeSubmitBtn").textContent = "Сохранить изменения";
+  $("#employeeCancelBtn").classList.remove("hidden");
+  showView("employees");
+  form.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function resetEmployeeForm() {
+  const form = $("#employeeForm");
+  form.reset();
+  form.elements.employee_id.value = "";
+  $("#employeeFormTitle").textContent = "Новый сотрудник";
+  $("#employeeSubmitBtn").textContent = "Добавить сотрудника";
+  $("#employeeCancelBtn").classList.add("hidden");
+}
+
+async function deleteEmployee(id) {
+  const employee = state.employees.find((item) => String(item.id) === String(id));
+  const name = employee?.full_name || `#${id}`;
+  if (!window.confirm(`Удалить сотрудника ${name}? Его доступы и фото также будут удалены.`)) {
+    return;
+  }
+  try {
+    await api(`/api/v1/employees/${id}`, { method: "DELETE" });
+    resetEmployeeForm();
+    await refreshAll();
+    showNotice("Сотрудник удален.");
   } catch (error) {
     showNotice(error.message, true);
   }

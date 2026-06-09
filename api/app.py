@@ -1,11 +1,13 @@
+import base64
+import io
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Annotated, Any
 
-from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, UploadFile
+from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import face
@@ -24,17 +26,22 @@ from .schemas import (
     AccessRuleIn,
     AccessRulePatch,
     CompanySetupIn,
+    EmployeeCredentialIn,
+    EmployeeGuestPassIn,
     EmployeeIn,
+    EmployeeLoginIn,
     EmployeePatch,
+    EmployeePasswordChangeIn,
     GuestPassIn,
     QrPassIn,
     RoomIn,
     RoomPatch,
     ScannerIn,
     ScannerPatch,
+    ScannerQrImageIn,
     ScannerVerifyIn,
 )
-from .security import generate_token, hash_token, verify_token
+from .security import generate_token, hash_password, hash_token, verify_password, verify_token
 
 
 app = FastAPI(
@@ -59,9 +66,33 @@ employee_dir = Path(__file__).resolve().parent.parent / "employee"
 if employee_dir.exists():
     app.mount("/employee", StaticFiles(directory=employee_dir, html=True), name="employee")
 
+scanner_app_dir = Path(__file__).resolve().parent.parent / "webapp"
+if scanner_app_dir.exists():
+    app.mount("/scanner", StaticFiles(directory=scanner_app_dir, html=True), name="scanner")
+
 storage_dir = Path(config.STORAGE_DIR)
 storage_dir.mkdir(parents=True, exist_ok=True)
 app.mount("/storage", StaticFiles(directory=storage_dir), name="storage")
+
+
+@app.exception_handler(sqlite3.IntegrityError)
+async def sqlite_integrity_error_handler(request: Request, exc: sqlite3.IntegrityError) -> JSONResponse:
+    message = str(exc)
+    if "employees.company_id, employees.external_id" in message:
+        detail = "Employee with this external_id already exists"
+    elif "employee_credentials.company_id, employee_credentials.login" in message:
+        detail = "Employee login already exists"
+    elif "employee_credentials.company_id, employee_credentials.employee_id" in message:
+        detail = "Employee already has credentials"
+    elif "rooms.company_id, rooms.code" in message:
+        detail = "Room code already exists"
+    elif "scanners.company_id, scanners.name" in message:
+        detail = "Scanner name already exists"
+    elif "companies.slug" in message:
+        detail = "Company slug already exists"
+    else:
+        detail = "Data conflict. Check unique fields and try again"
+    return JSONResponse(status_code=409, content={"detail": detail})
 
 
 @app.get("/")
@@ -124,12 +155,109 @@ def current_scanner(x_scanner_token: Annotated[str | None, Header()] = None) -> 
     raise HTTPException(status_code=401, detail="Invalid scanner token")
 
 
+def current_employee(authorization: Annotated[str | None, Header()] = None) -> dict[str, Any]:
+    if not authorization or not authorization.lower().startswith("bearer "):
+        raise HTTPException(status_code=401, detail="Bearer employee token is required")
+
+    token = authorization.split(" ", 1)[1].strip()
+    with connect() as db:
+        rows = db.execute(
+            """
+            SELECT employee_sessions.*, employees.full_name, employees.email, employees.phone,
+                   employees.position, employees.external_id, employees.status,
+                   companies.name AS company_name, companies.slug AS company_slug
+            FROM employee_sessions
+            JOIN employees ON employees.id = employee_sessions.employee_id
+            JOIN companies ON companies.id = employee_sessions.company_id
+            WHERE employee_sessions.revoked_at IS NULL
+              AND employees.status = 'active'
+              AND (employee_sessions.expires_at IS NULL OR employee_sessions.expires_at > CURRENT_TIMESTAMP)
+            """
+        ).fetchall()
+
+    for row in rows:
+        item = row_to_dict(row)
+        if item and verify_token(token, item["token_hash"]):
+            return item
+
+    raise HTTPException(status_code=401, detail="Invalid employee token")
+
+
 def require_company_item(db, table: str, company_id: int, item_id: int) -> dict[str, Any]:
     row = db.execute(f"SELECT * FROM {table} WHERE id = ? AND company_id = ?", (item_id, company_id)).fetchone()
     item = row_to_dict(row)
     if not item:
         raise HTTPException(status_code=404, detail=f"{table[:-1]} not found")
     return item
+
+
+def normalize_login(login: str) -> str:
+    return login.strip().lower()
+
+
+def upsert_employee_credential(db, company_id: int, employee_id: int, login: str, password: str) -> None:
+    db.execute(
+        """
+        INSERT INTO employee_credentials (company_id, employee_id, login, password_hash)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(company_id, employee_id) DO UPDATE SET
+            login = excluded.login,
+            password_hash = excluded.password_hash,
+            updated_at = CURRENT_TIMESTAMP
+        """,
+        (company_id, employee_id, normalize_login(login), hash_password(password)),
+    )
+
+
+def decode_qr_image_base64(image_base64: str) -> str:
+    if "," in image_base64:
+        image_base64 = image_base64.split(",", 1)[1]
+
+    try:
+        content = base64.b64decode(image_base64, validate=True)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Invalid QR image payload") from exc
+
+    try:
+        from PIL import Image
+        from pyzbar.pyzbar import decode
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Server QR decoder is unavailable. Install Pillow, pyzbar and libzbar, or run the Docker image.",
+        ) from exc
+
+    try:
+        image = Image.open(io.BytesIO(content))
+        decoded = decode(image)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Invalid QR image") from exc
+
+    if not decoded:
+        raise HTTPException(status_code=422, detail="QR code was not found in the image")
+
+    return decoded[0].data.decode("utf-8")
+
+
+def employee_photo_url(company_id: int, employee_id: int) -> str | None:
+    with connect() as db:
+        row = row_to_dict(
+            db.execute(
+                """
+                SELECT file_path FROM face_photos
+                WHERE company_id = ? AND employee_id = ?
+                ORDER BY created_at DESC, id DESC
+                LIMIT 1
+                """,
+                (company_id, employee_id),
+            ).fetchone()
+        )
+    if not row:
+        return None
+    try:
+        return qr_public_url(row["file_path"])
+    except ValueError:
+        return None
 
 
 def enrich_rule(rule: dict[str, Any]) -> dict[str, Any]:
@@ -285,7 +413,13 @@ def create_employee(payload: EmployeeIn, admin: Annotated[dict[str, Any], Depend
             """,
             (admin["company_id"], payload.external_id, payload.full_name, payload.position, payload.email, payload.phone, payload.status),
         )
-        return require_company_item(db, "employees", admin["company_id"], int(cursor.lastrowid))
+        employee_id = int(cursor.lastrowid)
+        if payload.password:
+            login = payload.login or payload.email or payload.external_id
+            if not login:
+                raise HTTPException(status_code=400, detail="login, email or external_id is required when password is set")
+            upsert_employee_credential(db, admin["company_id"], employee_id, login, payload.password)
+        return require_company_item(db, "employees", admin["company_id"], employee_id)
 
 
 @app.get("/api/v1/employees")
@@ -310,6 +444,26 @@ def update_employee(employee_id: int, payload: EmployeePatch, admin: Annotated[d
             db.execute(f"UPDATE employees SET {columns}, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND company_id = ?", values)
             return require_company_item(db, "employees", admin["company_id"], employee_id)
     return get_employee(employee_id, admin)
+
+
+@app.delete("/api/v1/employees/{employee_id}")
+def delete_employee(employee_id: int, admin: Annotated[dict[str, Any], Depends(current_admin)]) -> dict[str, Any]:
+    with connect() as db:
+        employee = require_company_item(db, "employees", admin["company_id"], employee_id)
+        db.execute("DELETE FROM employees WHERE id = ? AND company_id = ?", (employee_id, admin["company_id"]))
+    return {"status": "deleted", "employee_id": employee["id"]}
+
+
+@app.post("/api/v1/employees/{employee_id}/credentials")
+def set_employee_credentials(
+    employee_id: int,
+    payload: EmployeeCredentialIn,
+    admin: Annotated[dict[str, Any], Depends(current_admin)],
+) -> dict[str, Any]:
+    with connect() as db:
+        employee = require_company_item(db, "employees", admin["company_id"], employee_id)
+        upsert_employee_credential(db, admin["company_id"], employee_id, payload.login, payload.password)
+    return {"employee_id": employee["id"], "login": normalize_login(payload.login)}
 
 
 @app.post("/api/v1/employees/{employee_id}/face-photos", status_code=201)
@@ -467,6 +621,225 @@ def list_guests(
     values.append(limit)
     with connect() as db:
         return rows_to_dicts(db.execute(query, values).fetchall())
+
+
+@app.post("/api/v1/employee/login")
+def employee_login(payload: EmployeeLoginIn) -> dict[str, Any]:
+    with connect() as db:
+        credential = row_to_dict(
+            db.execute(
+                """
+                SELECT employee_credentials.*, employees.status, employees.full_name,
+                       companies.slug AS company_slug
+                FROM employee_credentials
+                JOIN employees ON employees.id = employee_credentials.employee_id
+                JOIN companies ON companies.id = employee_credentials.company_id
+                WHERE companies.slug = ? AND employee_credentials.login = ?
+                """,
+                (payload.company_slug, normalize_login(payload.login)),
+            ).fetchone()
+        )
+        if not credential or not verify_password(payload.password, credential["password_hash"]):
+            raise HTTPException(status_code=401, detail="Invalid login or password")
+        if credential["status"] != "active":
+            raise HTTPException(status_code=403, detail="Employee is not active")
+
+        token = generate_token("skud_employee")
+        db.execute(
+            """
+            INSERT INTO employee_sessions (company_id, employee_id, token_hash)
+            VALUES (?, ?, ?)
+            """,
+            (credential["company_id"], credential["employee_id"], hash_token(token)),
+        )
+
+    return {
+        "employee_token": token,
+        "employee_id": credential["employee_id"],
+        "company_id": credential["company_id"],
+        "company_slug": credential["company_slug"],
+        "full_name": credential["full_name"],
+    }
+
+
+@app.get("/api/v1/employee/me")
+def employee_me(employee: Annotated[dict[str, Any], Depends(current_employee)]) -> dict[str, Any]:
+    employee_id = int(employee["employee_id"])
+    company_id = int(employee["company_id"])
+    with connect() as db:
+        access_rules = rows_to_dicts(
+            db.execute(
+                """
+                SELECT access_rules.*, rooms.name AS room_name, rooms.code AS room_code
+                FROM access_rules
+                JOIN rooms ON rooms.id = access_rules.room_id
+                WHERE access_rules.company_id = ? AND access_rules.employee_id = ?
+                ORDER BY rooms.name
+                """,
+                (company_id, employee_id),
+            ).fetchall()
+        )
+        events = rows_to_dicts(
+            db.execute(
+                """
+                SELECT access_events.*, rooms.name AS room_name
+                FROM access_events
+                LEFT JOIN rooms ON rooms.id = access_events.room_id
+                WHERE access_events.company_id = ? AND access_events.employee_id = ?
+                ORDER BY access_events.occurred_at DESC
+                LIMIT 20
+                """,
+                (company_id, employee_id),
+            ).fetchall()
+        )
+    return {
+        "company": {"id": company_id, "name": employee["company_name"], "slug": employee["company_slug"]},
+        "employee": {
+            "id": employee_id,
+            "full_name": employee["full_name"],
+            "external_id": employee["external_id"],
+            "position": employee["position"],
+            "email": employee["email"],
+            "phone": employee["phone"],
+            "status": employee["status"],
+            "photo_url": employee_photo_url(company_id, employee_id),
+        },
+        "access_rules": [enrich_rule(rule) for rule in access_rules],
+        "recent_events": events,
+    }
+
+
+@app.get("/api/v1/employee/access-events")
+def employee_own_events(employee: Annotated[dict[str, Any], Depends(current_employee)], limit: int = Query(100, le=500)) -> list[dict[str, Any]]:
+    with connect() as db:
+        return rows_to_dicts(
+            db.execute(
+                """
+                SELECT access_events.*, rooms.name AS room_name
+                FROM access_events
+                LEFT JOIN rooms ON rooms.id = access_events.room_id
+                WHERE access_events.company_id = ? AND access_events.employee_id = ?
+                ORDER BY access_events.occurred_at DESC
+                LIMIT ?
+                """,
+                (employee["company_id"], employee["employee_id"], limit),
+            ).fetchall()
+        )
+
+
+@app.get("/api/v1/employee/guests")
+def employee_own_guests(employee: Annotated[dict[str, Any], Depends(current_employee)], limit: int = Query(100, le=500)) -> list[dict[str, Any]]:
+    with connect() as db:
+        return rows_to_dicts(
+            db.execute(
+                """
+                SELECT guests.*, rooms.name AS room_name
+                FROM guests
+                LEFT JOIN rooms ON rooms.id = guests.room_id
+                WHERE guests.company_id = ? AND guests.host_employee_id = ?
+                ORDER BY guests.visit_starts_at DESC
+                LIMIT ?
+                """,
+                (employee["company_id"], employee["employee_id"], limit),
+            ).fetchall()
+        )
+
+
+@app.post("/api/v1/employee/qr-passes", status_code=201)
+def create_own_qr_pass(payload: QrPassIn, employee: Annotated[dict[str, Any], Depends(current_employee)]) -> dict[str, Any]:
+    employee_id = int(employee["employee_id"])
+    company_id = int(employee["company_id"])
+    expires_at = payload.expires_at or default_expiration(payload.ttl_hours)
+    parse_dt(expires_at)
+    nonce = new_nonce()
+    with connect() as db:
+        cursor = db.execute(
+            """
+            INSERT INTO qr_passes (company_id, subject_type, subject_id, nonce, expires_at)
+            VALUES (?, 'employee', ?, ?, ?)
+            """,
+            (company_id, employee_id, nonce, expires_at),
+        )
+        pass_id = int(cursor.lastrowid)
+
+    qr_payload = create_qr_payload(
+        company_id=company_id,
+        qr_pass_id=pass_id,
+        subject_type="employee",
+        subject_id=employee_id,
+        expires_at=expires_at,
+        nonce=nonce,
+    )
+    qr_dir = Path(config.STORAGE_DIR) / "qr" / str(company_id)
+    qr_dir.mkdir(parents=True, exist_ok=True)
+    qr_path = qr_dir / f"employee_{employee_id}_pass_{pass_id}.png"
+    save_qr_png(qr_payload, str(qr_path))
+    return {
+        "id": pass_id,
+        "payload": qr_payload,
+        "qr_png_path": str(qr_path),
+        "qr_png_url": qr_public_url(qr_path),
+        "expires_at": expires_at,
+    }
+
+
+@app.post("/api/v1/employee/guest-passes", status_code=201)
+def create_own_guest_pass(payload: EmployeeGuestPassIn, employee: Annotated[dict[str, Any], Depends(current_employee)]) -> dict[str, Any]:
+    company_id = int(employee["company_id"])
+    employee_id = int(employee["employee_id"])
+    starts_at = parse_dt(payload.visit_starts_at).isoformat()
+    ends_at = parse_dt(payload.visit_ends_at).isoformat()
+    if parse_dt(ends_at) <= parse_dt(starts_at):
+        raise HTTPException(status_code=400, detail="visit_ends_at must be later than visit_starts_at")
+
+    with connect() as db:
+        rule = row_to_dict(
+            db.execute(
+                """
+                SELECT 1 FROM access_rules
+                WHERE company_id = ? AND employee_id = ? AND room_id = ? AND is_active = 1
+                """,
+                (company_id, employee_id, payload.room_id),
+            ).fetchone()
+        )
+        if not rule:
+            raise HTTPException(status_code=403, detail="You cannot invite guests to this room")
+
+    admin_like = {"company_id": company_id}
+    guest_payload = GuestPassIn(
+        host_employee_id=employee_id,
+        room_id=payload.room_id,
+        full_name=payload.full_name,
+        document_number=payload.document_number,
+        visit_starts_at=starts_at,
+        visit_ends_at=ends_at,
+    )
+    return create_guest_pass(guest_payload, admin_like)
+
+
+@app.post("/api/v1/employee/change-password")
+def employee_change_password(
+    payload: EmployeePasswordChangeIn,
+    employee: Annotated[dict[str, Any], Depends(current_employee)],
+) -> dict[str, Any]:
+    with connect() as db:
+        credential = row_to_dict(
+            db.execute(
+                "SELECT * FROM employee_credentials WHERE company_id = ? AND employee_id = ?",
+                (employee["company_id"], employee["employee_id"]),
+            ).fetchone()
+        )
+        if not credential or not verify_password(payload.current_password, credential["password_hash"]):
+            raise HTTPException(status_code=403, detail="Current password is incorrect")
+        db.execute(
+            """
+            UPDATE employee_credentials
+            SET password_hash = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (hash_password(payload.new_password), credential["id"]),
+        )
+    return {"status": "password_changed"}
 
 
 @app.post("/api/v1/rooms", status_code=201)
@@ -627,6 +1000,12 @@ def update_scanner(scanner_id: int, payload: ScannerPatch, admin: Annotated[dict
             return enrich_scanner(require_company_item(db, "scanners", admin["company_id"], scanner_id))
     with connect() as db:
         return enrich_scanner(require_company_item(db, "scanners", admin["company_id"], scanner_id))
+
+
+@app.post("/api/v1/scanner/decode-qr")
+def scanner_decode_qr(payload: ScannerQrImageIn, scanner: Annotated[dict[str, Any], Depends(current_scanner)]) -> dict[str, Any]:
+    qr_payload = decode_qr_image_base64(payload.image_base64)
+    return {"qr_payload": qr_payload}
 
 
 @app.post("/api/v1/scanner/verify")

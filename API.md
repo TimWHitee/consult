@@ -261,3 +261,57 @@ curl http://localhost:8000/api/v1/stats/office-time \
 - QR можно распознавать в браузере и отправлять строку payload на сервер;
 - лицо можно фотографировать через браузер, отправлять base64 и получать решение;
 - статистика и журналы уже доступны отдельными endpoint-ами.
+
+## Обновления: сотрудники, ошибки и QR fallback
+
+`external_id` сотрудника является строкой. Его можно задавать как `EMP-001`, `ivanov`, `HR-A-7` или в любом другом корпоративном формате. Числовым остается только внутренний `id` записи, который используется в URL вида `/api/v1/employees/{employee_id}`.
+
+Удалить сотрудника:
+
+```bash
+curl -X DELETE http://localhost:8000/api/v1/employees/1 \
+  -H "X-API-Key: skud_admin_..."
+```
+
+Ответ:
+
+```json
+{
+  "status": "deleted",
+  "employee_id": 1
+}
+```
+
+При удалении сотрудника удаляются его правила доступа, фото и учетные данные. История проходов остается в журнале, но ссылка на удаленного сотрудника очищается.
+
+Обновить логин и пароль сотрудника:
+
+```bash
+curl -X POST http://localhost:8000/api/v1/employees/1/credentials \
+  -H "X-API-Key: skud_admin_..." \
+  -H "Content-Type: application/json" \
+  -d '{"login":"ivanov","password":"new-secret"}'
+```
+
+Сервер теперь возвращает понятные `409 Conflict` для конфликтов уникальности, например:
+
+```json
+{ "detail": "Employee with this external_id already exists" }
+```
+
+Для браузеров без `BarcodeDetector` добавлен серверный endpoint декодирования QR из кадра камеры:
+
+```bash
+curl -X POST http://localhost:8000/api/v1/scanner/decode-qr \
+  -H "X-Scanner-Token: skud_scanner_..." \
+  -H "Content-Type: application/json" \
+  -d '{"image_base64":"data:image/jpeg;base64,..."}'
+```
+
+Ответ:
+
+```json
+{ "qr_payload": "skud1..." }
+```
+
+Если серверный QR decoder недоступен, API вернет `503` с понятной причиной. Для этого endpoint нужны `Pillow`, `pyzbar` и системная библиотека `libzbar`; Dockerfile уже рассчитан на такой сценарий.

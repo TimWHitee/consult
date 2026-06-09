@@ -20,6 +20,8 @@ class EmployeeIn(BaseModel):
     email: str | None = None
     phone: str | None = None
     status: Literal["active", "suspended"] = "active"
+    login: str | None = None
+    password: str | None = None
 
 
 class EmployeePatch(BaseModel):
@@ -95,8 +97,36 @@ class GuestPassIn(BaseModel):
     visit_ends_at: str
 
 
+class EmployeeGuestPassIn(BaseModel):
+    room_id: int
+    full_name: str
+    document_number: str | None = None
+    visit_starts_at: str
+    visit_ends_at: str
+
+
+class EmployeeLoginIn(BaseModel):
+    company_slug: str
+    login: str
+    password: str
+
+
+class EmployeePasswordChangeIn(BaseModel):
+    current_password: str
+    new_password: str = Field(min_length=6)
+
+
+class EmployeeCredentialIn(BaseModel):
+    login: str
+    password: str = Field(min_length=6)
+
+
 class ScannerVerifyIn(BaseModel):
     method: AccessMethod
     qr_payload: str | None = None
     face_image_base64: str | None = None
     raw_subject: str | None = None
+
+
+class ScannerQrImageIn(BaseModel):
+    image_base64: str

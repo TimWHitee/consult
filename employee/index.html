@@ -3,163 +3,177 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>SKUD Pass</title>
+    <title>SKUD Employee</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
-    <div class="app-shell">
-      <aside class="sidebar">
-        <div class="brand">
-          <div class="brand-mark">S</div>
-          <div>
-            <div class="brand-name">SKUD Pass</div>
-            <div class="brand-subtitle" id="companyName">Компания</div>
+    <main class="app">
+      <section id="loginView" class="login-view">
+        <div class="login-hero glass">
+          <div class="brand">
+            <span class="brand-mark">S</span>
+            <span>SKUD Pass</span>
           </div>
+          <h1>Ваш офисный пропуск.</h1>
+          <p>Входите, приглашайте гостей и отслеживайте историю проходов в одном спокойном личном кабинете.</p>
         </div>
 
-        <nav class="nav" aria-label="Разделы">
-          <button class="nav-item active" data-view="my-pass">Мой пропуск</button>
-          <button class="nav-item" data-view="guest-pass">Гостевой пропуск</button>
-          <button class="nav-item" data-view="history">Мои гости</button>
-          <button class="nav-item" data-view="settings">Подключение</button>
-        </nav>
-      </aside>
+        <form id="loginForm" class="login-card glass">
+          <h2>Вход сотрудника</h2>
+          <label>API URL<input id="apiBaseInput" name="apiBase" type="url" placeholder="http://localhost:8000" required /></label>
+          <label>Компания<input name="company_slug" placeholder="company-slug" required /></label>
+          <label>Логин<input name="login" autocomplete="username" required /></label>
+          <label>Пароль<input name="password" type="password" autocomplete="current-password" required /></label>
+          <button class="button primary" type="submit">Войти</button>
+        </form>
+      </section>
 
-      <main class="main">
-        <header class="topbar">
-          <div>
-            <h1 id="viewTitle">Мой пропуск</h1>
-            <p id="viewSubtitle">QR пропуск сотрудника</p>
+      <section id="dashboardView" class="dashboard hidden">
+        <aside class="sidebar glass">
+          <div class="profile-mini">
+            <img id="miniPhoto" alt="Фото профиля" />
+            <div>
+              <strong id="miniName">Сотрудник</strong>
+              <span id="miniCompany">Компания</span>
+            </div>
           </div>
-          <div class="employee-picker">
-            <select id="employeeSelect" aria-label="Сотрудник"></select>
+          <nav>
+            <button class="nav-item active" data-view="overview">Обзор</button>
+            <button class="nav-item" data-view="pass">Мой QR</button>
+            <button class="nav-item" data-view="guests">Гости</button>
+            <button class="nav-item" data-view="logs">Логи</button>
+            <button class="nav-item" data-view="settings">Настройки</button>
+          </nav>
+          <button id="logoutBtn" class="button ghost">Выйти</button>
+        </aside>
+
+        <section class="content">
+          <header class="top glass">
+            <div>
+              <h1 id="viewTitle">Обзор</h1>
+              <p id="viewSubtitle">Профиль, уровни доступа и последние проходы.</p>
+            </div>
             <button id="refreshBtn" class="button">Обновить</button>
-          </div>
-        </header>
+          </header>
 
-        <div id="notice" class="notice hidden" role="status"></div>
+          <div id="notice" class="notice hidden"></div>
 
-        <section id="my-pass" class="view active">
-          <div class="layout-two">
-            <section class="panel pass-panel">
+          <section id="overview" class="view active">
+            <div class="profile-card glass">
+              <img id="profilePhoto" alt="Фото сотрудника" />
+              <div>
+                <span class="eyebrow">Профиль</span>
+                <h2 id="profileName">-</h2>
+                <p id="profileMeta">-</p>
+                <div class="chip-row">
+                  <span id="profileStatus" class="chip">status</span>
+                  <span id="profileExternal" class="chip">id</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="cards-grid" id="accessCards"></div>
+
+            <section class="glass panel">
               <div class="panel-head">
-                <h2>Текущий QR</h2>
-                <span class="status-pill" id="employeeStatus">Не выбран</span>
+                <h2>Последние проходы</h2>
+                <button class="button ghost" data-view-target="logs">Все логи</button>
               </div>
-              <div class="qr-frame">
-                <img id="employeeQrImage" alt="QR пропуск сотрудника" />
-                <div id="employeeQrEmpty" class="empty">QR появится после выпуска пропуска</div>
-              </div>
-              <div class="pass-meta">
-                <div>
-                  <span>Действует до</span>
-                  <strong id="employeeExpires">-</strong>
-                </div>
-                <div>
-                  <span>ID пропуска</span>
-                  <strong id="employeePassId">-</strong>
-                </div>
-              </div>
+              <div id="recentEvents" class="event-list"></div>
             </section>
+          </section>
 
-            <section class="panel">
-              <div class="panel-head">
+          <section id="pass" class="view">
+            <div class="pass-layout">
+              <section class="glass panel qr-panel">
+                <h2>Мой QR-код</h2>
+                <div class="qr-frame">
+                  <img id="employeeQrImage" alt="QR пропуск" />
+                  <span id="employeeQrEmpty">Выпустите QR, чтобы показать его на сканере</span>
+                </div>
+                <div class="pass-meta">
+                  <div><span>Действует до</span><strong id="employeeExpires">-</strong></div>
+                  <div><span>ID</span><strong id="employeePassId">-</strong></div>
+                </div>
+              </section>
+
+              <section class="glass panel">
                 <h2>Выпуск пропуска</h2>
-              </div>
-              <form id="employeeQrForm" class="form-grid">
-                <label>Срок действия
-                  <select name="ttl_hours">
-                    <option value="4">4 часа</option>
-                    <option value="8">8 часов</option>
-                    <option value="12" selected>12 часов</option>
-                    <option value="24">24 часа</option>
-                  </select>
-                </label>
-                <button class="button primary" type="submit">Выпустить QR</button>
-              </form>
-              <textarea id="employeePayload" class="code-output" readonly placeholder="Payload QR"></textarea>
-            </section>
-          </div>
-        </section>
+                <form id="employeeQrForm" class="form-grid single">
+                  <label>Срок действия
+                    <select name="ttl_hours">
+                      <option value="4">4 часа</option>
+                      <option value="8">8 часов</option>
+                      <option value="12" selected>12 часов</option>
+                      <option value="24">24 часа</option>
+                    </select>
+                  </label>
+                  <button class="button primary" type="submit">Сгенерировать QR</button>
+                </form>
+                <textarea id="employeePayload" class="code-output" readonly placeholder="QR payload"></textarea>
+              </section>
+            </div>
+          </section>
 
-        <section id="guest-pass" class="view">
-          <div class="layout-two">
-            <section class="panel">
-              <div class="panel-head">
-                <h2>Новый гость</h2>
-              </div>
-              <form id="guestForm" class="form-grid">
-                <label class="span-2">ФИО гостя<input name="full_name" required /></label>
-                <label>Документ<input name="document_number" inputmode="numeric" /></label>
-                <label>Помещение<select name="room_id" id="roomSelect" required></select></label>
-                <label>Начало визита<input name="visit_starts_at" type="datetime-local" required /></label>
-                <label>Окончание визита<input name="visit_ends_at" type="datetime-local" required /></label>
-                <button class="button primary span-2" type="submit">Создать гостевой QR</button>
-              </form>
-            </section>
+          <section id="guests" class="view">
+            <div class="pass-layout">
+              <section class="glass panel">
+                <h2>Пригласить гостя</h2>
+                <form id="guestForm" class="form-grid">
+                  <label class="span-2">ФИО гостя<input name="full_name" required /></label>
+                  <label>Документ<input name="document_number" /></label>
+                  <label>Помещение<select name="room_id" id="roomSelect" required></select></label>
+                  <label>Начало<input name="visit_starts_at" type="datetime-local" required /></label>
+                  <label>Окончание<input name="visit_ends_at" type="datetime-local" required /></label>
+                  <button class="button primary span-2" type="submit">Создать гостевой QR</button>
+                </form>
+              </section>
 
-            <section class="panel pass-panel">
-              <div class="panel-head">
+              <section class="glass panel qr-panel">
                 <h2>QR гостя</h2>
-                <span class="status-pill" id="guestStatus">Не создан</span>
-              </div>
-              <div class="qr-frame">
-                <img id="guestQrImage" alt="QR гостевого пропуска" />
-                <div id="guestQrEmpty" class="empty">QR появится после создания пропуска</div>
-              </div>
-              <div class="pass-meta">
-                <div>
-                  <span>Гость</span>
-                  <strong id="guestName">-</strong>
+                <div class="qr-frame">
+                  <img id="guestQrImage" alt="QR гостя" />
+                  <span id="guestQrEmpty">QR появится после создания приглашения</span>
                 </div>
-                <div>
-                  <span>Действует до</span>
-                  <strong id="guestExpires">-</strong>
+                <div class="pass-meta">
+                  <div><span>Гость</span><strong id="guestName">-</strong></div>
+                  <div><span>Действует до</span><strong id="guestExpires">-</strong></div>
                 </div>
+              </section>
+            </div>
+
+            <section class="glass panel">
+              <div class="panel-head">
+                <h2>Мои приглашения</h2>
+                <button id="loadGuestsBtn" class="button ghost">Обновить</button>
               </div>
+              <div id="guestsList" class="event-list"></div>
             </section>
-          </div>
-        </section>
+          </section>
 
-        <section id="history" class="view">
-          <section class="panel">
-            <div class="panel-head">
-              <h2>Мои гости</h2>
-              <button id="loadGuestsBtn" class="button">Обновить</button>
-            </div>
-            <div class="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>ID</th>
-                    <th>Гость</th>
-                    <th>Помещение</th>
-                    <th>Начало</th>
-                    <th>Окончание</th>
-                    <th>Статус</th>
-                  </tr>
-                </thead>
-                <tbody id="guestsBody"></tbody>
-              </table>
-            </div>
+          <section id="logs" class="view">
+            <section class="glass panel">
+              <h2>История проходов</h2>
+              <div id="eventsList" class="event-list"></div>
+            </section>
+          </section>
+
+          <section id="settings" class="view">
+            <section class="glass panel">
+              <h2>Смена пароля</h2>
+              <form id="passwordForm" class="form-grid single">
+                <label>Текущий пароль<input name="current_password" type="password" required /></label>
+                <label>Новый пароль<input name="new_password" type="password" minlength="6" required /></label>
+                <button class="button primary" type="submit">Сменить пароль</button>
+              </form>
+            </section>
           </section>
         </section>
-
-        <section id="settings" class="view">
-          <section class="panel">
-            <div class="panel-head">
-              <h2>Подключение к API</h2>
-            </div>
-            <form id="settingsForm" class="form-grid">
-              <label>API URL<input id="apiBaseInput" name="apiBase" type="url" placeholder="http://localhost:8000" required /></label>
-              <label>API ключ<input id="apiKeyInput" name="apiKey" type="password" placeholder="X-API-Key" required /></label>
-              <button class="button primary" type="submit">Подключить</button>
-              <button id="clearSettingsBtn" class="button danger" type="button">Сбросить</button>
-            </form>
-          </section>
-        </section>
-      </main>
-    </div>
+      </section>
+    </main>
 
     <script src="./app.js"></script>
   </body>

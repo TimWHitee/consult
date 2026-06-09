@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SKUD Scanner</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="scanner-app">
+      <header class="top glass">
+        <div class="brand">
+          <span class="brand-mark">S</span>
+          <div>
+            <strong>SKUD Scanner</strong>
+            <span id="connectionStatus">Not connected</span>
+          </div>
+        </div>
+        <div class="connection">
+          <input id="apiBaseInput" type="url" placeholder="http://localhost:8000" />
+          <input id="scannerTokenInput" type="password" placeholder="Scanner token" />
+          <button class="button primary" id="saveConnectionBtn">Save</button>
+        </div>
+      </header>
+
+      <section class="hero glass">
+        <div>
+          <span class="eyebrow">Entry point</span>
+          <h1>Scan and decide.</h1>
+          <p>Быстрая проверка QR и лица с понятным результатом для турникета или поста охраны.</p>
+        </div>
+        <div class="result-card" id="resultPanel">
+          <span>Decision</span>
+          <strong id="decisionText">Waiting</strong>
+          <p id="reasonText">Подключите сканер и начните проверку.</p>
+        </div>
+      </section>
+
+      <section class="scanner-grid">
+        <section class="panel glass">
+          <div class="panel-head">
+            <h2>QR camera</h2>
+            <span id="qrStatus" class="pill">idle</span>
+          </div>
+          <div class="camera-box">
+            <video id="qrVideo" muted playsinline></video>
+            <canvas id="qrCanvas" hidden></canvas>
+          </div>
+          <div class="actions">
+            <button class="button primary big" id="startQrCameraBtn">Start QR scan</button>
+            <button class="button big" id="stopQrCameraBtn">Stop</button>
+          </div>
+          <label>Manual QR payload<textarea id="qrPayloadInput" placeholder="skud1..."></textarea></label>
+          <button class="button primary" id="sendQrBtn">Verify QR payload</button>
+        </section>
+
+        <section class="panel glass">
+          <div class="panel-head">
+            <h2>Face camera</h2>
+            <span class="pill">photo</span>
+          </div>
+          <div class="camera-box">
+            <video id="faceVideo" autoplay muted playsinline></video>
+            <canvas id="faceCanvas" hidden></canvas>
+          </div>
+          <div class="actions">
+            <button class="button big" id="startFaceCameraBtn">Start camera</button>
+            <button class="button primary big" id="captureFaceBtn">Capture face</button>
+          </div>
+          <label>Upload image<input id="faceFileInput" type="file" accept="image/*" /></label>
+          <button class="button" id="sendFaceFileBtn">Verify uploaded face</button>
+        </section>
+
+        <section class="panel glass details-panel">
+          <h2>Last response</h2>
+          <dl>
+            <div><dt>Event</dt><dd id="eventIdText">-</dd></div>
+            <div><dt>Employee</dt><dd id="employeeText">-</dd></div>
+            <div><dt>Room</dt><dd id="roomText">-</dd></div>
+            <div><dt>Scanner</dt><dd id="scannerText">-</dd></div>
+            <div><dt>Unlock</dt><dd id="unlockText">-</dd></div>
+            <div><dt>Confidence</dt><dd id="confidenceText">-</dd></div>
+          </dl>
+        </section>
+      </section>
+    </main>
+
+    <script src="./app.js"></script>
+  </body>
+</html>

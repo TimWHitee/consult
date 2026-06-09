@@ -19,6 +19,8 @@ COPY creator/ ./creator/
 COPY scanner/ ./scanner/
 COPY api/ ./api/
 COPY admin/ ./admin/
+COPY webapp/ ./webapp/
+COPY employee/ ./employee/
 
 # Папки которые создаются в рантайме
 RUN mkdir -p qr_codes qr_scans face_photos storage
