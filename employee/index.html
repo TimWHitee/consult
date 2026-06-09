@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SKUD Pass</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">S</div>
+          <div>
+            <div class="brand-name">SKUD Pass</div>
+            <div class="brand-subtitle" id="companyName">Компания</div>
+          </div>
+        </div>
+
+        <nav class="nav" aria-label="Разделы">
+          <button class="nav-item active" data-view="my-pass">Мой пропуск</button>
+          <button class="nav-item" data-view="guest-pass">Гостевой пропуск</button>
+          <button class="nav-item" data-view="history">Мои гости</button>
+          <button class="nav-item" data-view="settings">Подключение</button>
+        </nav>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <div>
+            <h1 id="viewTitle">Мой пропуск</h1>
+            <p id="viewSubtitle">QR пропуск сотрудника</p>
+          </div>
+          <div class="employee-picker">
+            <select id="employeeSelect" aria-label="Сотрудник"></select>
+            <button id="refreshBtn" class="button">Обновить</button>
+          </div>
+        </header>
+
+        <div id="notice" class="notice hidden" role="status"></div>
+
+        <section id="my-pass" class="view active">
+          <div class="layout-two">
+            <section class="panel pass-panel">
+              <div class="panel-head">
+                <h2>Текущий QR</h2>
+                <span class="status-pill" id="employeeStatus">Не выбран</span>
+              </div>
+              <div class="qr-frame">
+                <img id="employeeQrImage" alt="QR пропуск сотрудника" />
+                <div id="employeeQrEmpty" class="empty">QR появится после выпуска пропуска</div>
+              </div>
+              <div class="pass-meta">
+                <div>
+                  <span>Действует до</span>
+                  <strong id="employeeExpires">-</strong>
+                </div>
+                <div>
+                  <span>ID пропуска</span>
+                  <strong id="employeePassId">-</strong>
+                </div>
+              </div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-head">
+                <h2>Выпуск пропуска</h2>
+              </div>
+              <form id="employeeQrForm" class="form-grid">
+                <label>Срок действия
+                  <select name="ttl_hours">
+                    <option value="4">4 часа</option>
+                    <option value="8">8 часов</option>
+                    <option value="12" selected>12 часов</option>
+                    <option value="24">24 часа</option>
+                  </select>
+                </label>
+                <button class="button primary" type="submit">Выпустить QR</button>
+              </form>
+              <textarea id="employeePayload" class="code-output" readonly placeholder="Payload QR"></textarea>
+            </section>
+          </div>
+        </section>
+
+        <section id="guest-pass" class="view">
+          <div class="layout-two">
+            <section class="panel">
+              <div class="panel-head">
+                <h2>Новый гость</h2>
+              </div>
+              <form id="guestForm" class="form-grid">
+                <label class="span-2">ФИО гостя<input name="full_name" required /></label>
+                <label>Документ<input name="document_number" inputmode="numeric" /></label>
+                <label>Помещение<select name="room_id" id="roomSelect" required></select></label>
+                <label>Начало визита<input name="visit_starts_at" type="datetime-local" required /></label>
+                <label>Окончание визита<input name="visit_ends_at" type="datetime-local" required /></label>
+                <button class="button primary span-2" type="submit">Создать гостевой QR</button>
+              </form>
+            </section>
+
+            <section class="panel pass-panel">
+              <div class="panel-head">
+                <h2>QR гостя</h2>
+                <span class="status-pill" id="guestStatus">Не создан</span>
+              </div>
+              <div class="qr-frame">
+                <img id="guestQrImage" alt="QR гостевого пропуска" />
+                <div id="guestQrEmpty" class="empty">QR появится после создания пропуска</div>
+              </div>
+              <div class="pass-meta">
+                <div>
+                  <span>Гость</span>
+                  <strong id="guestName">-</strong>
+                </div>
+                <div>
+                  <span>Действует до</span>
+                  <strong id="guestExpires">-</strong>
+                </div>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <section id="history" class="view">
+          <section class="panel">
+            <div class="panel-head">
+              <h2>Мои гости</h2>
+              <button id="loadGuestsBtn" class="button">Обновить</button>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Гость</th>
+                    <th>Помещение</th>
+                    <th>Начало</th>
+                    <th>Окончание</th>
+                    <th>Статус</th>
+                  </tr>
+                </thead>
+                <tbody id="guestsBody"></tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+
+        <section id="settings" class="view">
+          <section class="panel">
+            <div class="panel-head">
+              <h2>Подключение к API</h2>
+            </div>
+            <form id="settingsForm" class="form-grid">
+              <label>API URL<input id="apiBaseInput" name="apiBase" type="url" placeholder="http://localhost:8000" required /></label>
+              <label>API ключ<input id="apiKeyInput" name="apiKey" type="password" placeholder="X-API-Key" required /></label>
+              <button class="button primary" type="submit">Подключить</button>
+              <button id="clearSettingsBtn" class="button danger" type="button">Сбросить</button>
+            </form>
+          </section>
+        </section>
+      </main>
+    </div>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
