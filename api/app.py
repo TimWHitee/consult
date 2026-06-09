@@ -1,3 +1,4 @@
+import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Annotated, Any
@@ -236,14 +237,19 @@ def setup_company(payload: CompanySetupIn, x_bootstrap_token: Annotated[str | No
         raise HTTPException(status_code=401, detail="Invalid bootstrap token")
 
     admin_key = generate_token("skud_admin")
-    with connect() as db:
-        cursor = db.execute("INSERT INTO companies (name, slug) VALUES (?, ?)", (payload.name, payload.slug))
-        company_id = int(cursor.lastrowid)
-        db.execute(
-            "INSERT INTO api_keys (company_id, name, key_hash, role) VALUES (?, ?, ?, 'admin')",
-            (company_id, payload.admin_key_name, hash_token(admin_key)),
-        )
-        company = row_to_dict(db.execute("SELECT * FROM companies WHERE id = ?", (company_id,)).fetchone())
+    try:
+        with connect() as db:
+            cursor = db.execute("INSERT INTO companies (name, slug) VALUES (?, ?)", (payload.name, payload.slug))
+            company_id = int(cursor.lastrowid)
+            db.execute(
+                "INSERT INTO api_keys (company_id, name, key_hash, role) VALUES (?, ?, ?, 'admin')",
+                (company_id, payload.admin_key_name, hash_token(admin_key)),
+            )
+            company = row_to_dict(db.execute("SELECT * FROM companies WHERE id = ?", (company_id,)).fetchone())
+    except sqlite3.IntegrityError as exc:
+        if "companies.slug" in str(exc) or "UNIQUE constraint failed" in str(exc):
+            raise HTTPException(status_code=409, detail="Company slug already exists") from exc
+        raise
 
     return {"company": company, "admin_api_key": admin_key}
 

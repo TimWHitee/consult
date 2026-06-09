@@ -108,11 +108,20 @@ async function api(path, options = {}) {
 
   const response = await fetch(`${state.apiBase}${path}`, { ...options, headers });
   const text = await response.text();
-  const data = text ? JSON.parse(text) : null;
+  const data = parseResponseBody(text);
   if (!response.ok) {
-    throw new Error(data?.detail || response.statusText);
+    throw new Error(data?.detail || text || response.statusText);
   }
   return data;
+}
+
+function parseResponseBody(text) {
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
 }
 
 async function refreshAll() {
@@ -403,7 +412,8 @@ function renderOccupancyItem(room) {
 
 async function setupCompany(event) {
   event.preventDefault();
-  const form = new FormData(event.currentTarget);
+  const formElement = event.currentTarget;
+  const form = new FormData(formElement);
   state.apiBase = cleanBase($("#apiBaseInput").value);
   const bootstrapToken = form.get("bootstrap_token");
   try {
@@ -418,13 +428,14 @@ async function setupCompany(event) {
         slug: form.get("slug"),
       }),
     });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.detail || response.statusText);
+    const text = await response.text();
+    const data = parseResponseBody(text);
+    if (!response.ok) throw new Error(data?.detail || text || response.statusText);
     state.apiKey = data.admin_api_key;
     $("#apiKeyInput").value = state.apiKey;
     localStorage.setItem("skud.apiBase", state.apiBase);
     localStorage.setItem("skud.apiKey", state.apiKey);
-    event.currentTarget.reset();
+    formElement.reset();
     await refreshAll();
     showView("dashboard");
   } catch (error) {
@@ -434,21 +445,24 @@ async function setupCompany(event) {
 
 async function createEmployee(event) {
   event.preventDefault();
-  const payload = formObject(event.currentTarget);
-  await submitAndRefresh("/api/v1/employees", payload, event.currentTarget);
+  const formElement = event.currentTarget;
+  const payload = formObject(formElement);
+  await submitAndRefresh("/api/v1/employees", payload, formElement);
 }
 
 async function createRoom(event) {
   event.preventDefault();
-  const payload = formObject(event.currentTarget);
+  const formElement = event.currentTarget;
+  const payload = formObject(formElement);
   if (payload.capacity === "") delete payload.capacity;
-  await submitAndRefresh("/api/v1/rooms", payload, event.currentTarget);
+  await submitAndRefresh("/api/v1/rooms", payload, formElement);
 }
 
 async function saveAccessRule(event) {
   event.preventDefault();
-  const form = new FormData(event.currentTarget);
-  const allowed = methodsFromForm(event.currentTarget);
+  const formElement = event.currentTarget;
+  const form = new FormData(formElement);
+  const allowed = methodsFromForm(formElement);
   if (!allowed.length) {
     showNotice("Выберите хотя бы один метод доступа.", true);
     return;
@@ -461,13 +475,14 @@ async function saveAccessRule(event) {
     valid_until: localDateToIso(form.get("valid_until")),
     is_active: form.get("is_active") === "on",
   };
-  await submitAndRefresh("/api/v1/access-rules", payload, event.currentTarget);
+  await submitAndRefresh("/api/v1/access-rules", payload, formElement);
 }
 
 async function createScanner(event) {
   event.preventDefault();
-  const form = new FormData(event.currentTarget);
-  const allowed = methodsFromForm(event.currentTarget);
+  const formElement = event.currentTarget;
+  const form = new FormData(formElement);
+  const allowed = methodsFromForm(formElement);
   if (!allowed.length) {
     showNotice("Выберите хотя бы один метод сканера.", true);
     return;
@@ -482,7 +497,7 @@ async function createScanner(event) {
   try {
     const result = await api("/api/v1/scanners", { method: "POST", body: JSON.stringify(payload) });
     $("#scannerTokenOutput").value = result.scanner_token;
-    event.currentTarget.reset();
+    formElement.reset();
     await refreshAll();
   } catch (error) {
     showNotice(error.message, true);
@@ -491,14 +506,15 @@ async function createScanner(event) {
 
 async function uploadFacePhoto(event) {
   event.preventDefault();
-  const form = new FormData(event.currentTarget);
+  const formElement = event.currentTarget;
+  const form = new FormData(formElement);
   const employeeId = form.get("employee_id");
   const data = new FormData();
   data.append("file", form.get("file"));
   try {
     const result = await api(`/api/v1/employees/${employeeId}/face-photos`, { method: "POST", body: data });
     showNotice(`Фото загружено: ${result.quality_status}.`);
-    event.currentTarget.reset();
+    formElement.reset();
   } catch (error) {
     showNotice(error.message, true);
   }
@@ -506,7 +522,8 @@ async function uploadFacePhoto(event) {
 
 async function createQrPass(event) {
   event.preventDefault();
-  const form = new FormData(event.currentTarget);
+  const formElement = event.currentTarget;
+  const form = new FormData(formElement);
   const employeeId = form.get("employee_id");
   try {
     const result = await api(`/api/v1/employees/${employeeId}/qr-passes`, {
