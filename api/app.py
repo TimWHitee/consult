@@ -26,6 +26,7 @@ from .schemas import (
     CompanySetupIn,
     EmployeeIn,
     EmployeePatch,
+    GuestPassIn,
     QrPassIn,
     RoomIn,
     RoomPatch,
@@ -53,6 +54,14 @@ app.add_middleware(
 admin_dir = Path(__file__).resolve().parent.parent / "admin"
 if admin_dir.exists():
     app.mount("/admin", StaticFiles(directory=admin_dir, html=True), name="admin")
+
+employee_dir = Path(__file__).resolve().parent.parent / "employee"
+if employee_dir.exists():
+    app.mount("/employee", StaticFiles(directory=employee_dir, html=True), name="employee")
+
+storage_dir = Path(config.STORAGE_DIR)
+storage_dir.mkdir(parents=True, exist_ok=True)
+app.mount("/storage", StaticFiles(directory=storage_dir), name="storage")
 
 
 @app.get("/")
@@ -226,6 +235,13 @@ def check_access(company_id: int, employee_id: int, room_id: int, method: str) -
     return True, "access_granted"
 
 
+def qr_public_url(path: Path | str) -> str:
+    storage_root = Path(config.STORAGE_DIR).resolve()
+    qr_path = Path(path).resolve()
+    relative = qr_path.relative_to(storage_root).as_posix()
+    return f"/storage/{relative}"
+
+
 @app.get("/health")
 def health() -> dict[str, Any]:
     return {"status": "ok", "face_engine_available": face.face_engine_available()}
@@ -363,7 +379,94 @@ def create_employee_qr_pass(
     qr_dir.mkdir(parents=True, exist_ok=True)
     qr_path = qr_dir / f"employee_{employee_id}_pass_{pass_id}.png"
     save_qr_png(qr_payload, str(qr_path))
-    return {"id": pass_id, "payload": qr_payload, "qr_png_path": str(qr_path), "expires_at": expires_at}
+    return {
+        "id": pass_id,
+        "payload": qr_payload,
+        "qr_png_path": str(qr_path),
+        "qr_png_url": qr_public_url(qr_path),
+        "expires_at": expires_at,
+    }
+
+
+@app.post("/api/v1/guest-passes", status_code=201)
+def create_guest_pass(payload: GuestPassIn, admin: Annotated[dict[str, Any], Depends(current_admin)]) -> dict[str, Any]:
+    starts_at = parse_dt(payload.visit_starts_at).isoformat()
+    ends_at = parse_dt(payload.visit_ends_at).isoformat()
+    if parse_dt(ends_at) <= parse_dt(starts_at):
+        raise HTTPException(status_code=400, detail="visit_ends_at must be later than visit_starts_at")
+
+    nonce = new_nonce()
+    with connect() as db:
+        require_company_item(db, "employees", admin["company_id"], payload.host_employee_id)
+        require_company_item(db, "rooms", admin["company_id"], payload.room_id)
+        cursor = db.execute(
+            """
+            INSERT INTO guests (
+                company_id, host_employee_id, room_id, full_name, document_number,
+                visit_starts_at, visit_ends_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                admin["company_id"],
+                payload.host_employee_id,
+                payload.room_id,
+                payload.full_name,
+                payload.document_number,
+                starts_at,
+                ends_at,
+            ),
+        )
+        guest_id = int(cursor.lastrowid)
+        pass_cursor = db.execute(
+            """
+            INSERT INTO qr_passes (company_id, subject_type, subject_id, nonce, expires_at)
+            VALUES (?, 'guest', ?, ?, ?)
+            """,
+            (admin["company_id"], guest_id, nonce, ends_at),
+        )
+        pass_id = int(pass_cursor.lastrowid)
+        guest = row_to_dict(db.execute("SELECT * FROM guests WHERE id = ?", (guest_id,)).fetchone())
+
+    qr_payload = create_qr_payload(
+        company_id=admin["company_id"],
+        qr_pass_id=pass_id,
+        subject_type="guest",
+        subject_id=guest_id,
+        expires_at=ends_at,
+        nonce=nonce,
+    )
+    qr_dir = Path(config.STORAGE_DIR) / "qr" / str(admin["company_id"])
+    qr_dir.mkdir(parents=True, exist_ok=True)
+    qr_path = qr_dir / f"guest_{guest_id}_pass_{pass_id}.png"
+    save_qr_png(qr_payload, str(qr_path))
+    return {
+        "guest": guest,
+        "qr_pass": {
+            "id": pass_id,
+            "payload": qr_payload,
+            "qr_png_path": str(qr_path),
+            "qr_png_url": qr_public_url(qr_path),
+            "expires_at": ends_at,
+        },
+    }
+
+
+@app.get("/api/v1/guests")
+def list_guests(
+    admin: Annotated[dict[str, Any], Depends(current_admin)],
+    host_employee_id: int | None = None,
+    limit: int = Query(100, le=500),
+) -> list[dict[str, Any]]:
+    query = "SELECT * FROM guests WHERE company_id = ?"
+    values: list[Any] = [admin["company_id"]]
+    if host_employee_id is not None:
+        query += " AND host_employee_id = ?"
+        values.append(host_employee_id)
+    query += " ORDER BY visit_starts_at DESC LIMIT ?"
+    values.append(limit)
+    with connect() as db:
+        return rows_to_dicts(db.execute(query, values).fetchall())
 
 
 @app.post("/api/v1/rooms", status_code=201)
@@ -533,6 +636,8 @@ def scanner_verify(payload: ScannerVerifyIn, scanner: Annotated[dict[str, Any], 
     confidence = None
     qr_pass_id = None
     reason = "unknown"
+    subject_type = "employee"
+    raw_subject = payload.raw_subject
 
     if payload.method not in scanner_methods:
         event_id = log_event(
@@ -567,21 +672,48 @@ def scanner_verify(payload: ScannerVerifyIn, scanner: Annotated[dict[str, Any], 
                     )
                 if not qr_pass:
                     reason = "qr_pass_not_found_or_revoked"
-                elif data["subject_type"] != "employee":
-                    reason = "unsupported_qr_subject"
-                else:
+                elif data["subject_type"] == "employee":
                     employee_id = int(data["subject_id"])
                     reason = "identified_by_qr"
+                elif data["subject_type"] == "guest":
+                    subject_type = "guest"
+                    guest_id = int(data["subject_id"])
+                    with connect() as db:
+                        guest = row_to_dict(
+                            db.execute(
+                                """
+                                SELECT * FROM guests
+                                WHERE id = ? AND company_id = ? AND status = 'active'
+                                """,
+                                (guest_id, scanner["company_id"]),
+                            ).fetchone()
+                        )
+                    if not guest:
+                        reason = "guest_not_found_or_inactive"
+                    elif int(guest["room_id"]) != int(scanner["room_id"]):
+                        reason = "guest_room_mismatch"
+                    elif parse_dt(guest["visit_starts_at"]) > utc_now():
+                        reason = "guest_visit_not_started"
+                    elif parse_dt(guest["visit_ends_at"]) < utc_now():
+                        reason = "guest_visit_expired"
+                    else:
+                        employee_id = int(guest["host_employee_id"])
+                        raw_subject = guest["full_name"]
+                        reason = "guest_access_granted"
+                else:
+                    reason = "unsupported_qr_subject"
     elif payload.method == "face":
         if not payload.face_image_base64:
             reason = "face_image_required"
         else:
             employee_id, confidence, reason = face.recognize_base64(scanner["company_id"], payload.face_image_base64)
 
-    if employee_id:
+    if employee_id and subject_type == "employee":
         granted, access_reason = check_access(scanner["company_id"], employee_id, scanner["room_id"], payload.method)
         decision = "granted" if granted else "denied"
         reason = access_reason
+    elif employee_id and subject_type == "guest":
+        decision = "granted"
     else:
         decision = "denied"
 
@@ -596,7 +728,7 @@ def scanner_verify(payload: ScannerVerifyIn, scanner: Annotated[dict[str, Any], 
         reason=reason,
         confidence=confidence,
         qr_pass_id=qr_pass_id,
-        raw_subject=payload.raw_subject,
+        raw_subject=raw_subject,
     )
     response: dict[str, Any] = {
         "decision": decision,

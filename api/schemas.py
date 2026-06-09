@@ -86,6 +86,15 @@ class QrPassIn(BaseModel):
     ttl_hours: int = 12
 
 
+class GuestPassIn(BaseModel):
+    host_employee_id: int
+    room_id: int
+    full_name: str
+    document_number: str | None = None
+    visit_starts_at: str
+    visit_ends_at: str
+
+
 class ScannerVerifyIn(BaseModel):
     method: AccessMethod
     qr_payload: str | None = None
