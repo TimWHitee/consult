@@ -2,25 +2,15 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y \
-    cmake \
-    build-essential \
-    libzbar0 \
-    libopenblas-dev \
-    liblapack-dev \
-    git \
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libzbar0 \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY requirements-api.txt .
+RUN pip install --no-cache-dir -r requirements-api.txt
 
-# Копируем весь проект сохраняя структуру
-COPY creator/ ./creator/
-COPY scanner/ ./scanner/
 COPY api/ ./api/
 COPY admin/ ./admin/
-COPY webapp/ ./webapp/
 COPY employee/ ./employee/
 
-# Папки которые создаются в рантайме
-RUN mkdir -p qr_codes qr_scans face_photos storage
+RUN mkdir -p storage
