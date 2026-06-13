@@ -1,5 +1,14 @@
 # SKUD API
 
+## Current API notes
+
+- Admin endpoints accept either `X-API-Key: skud_admin_...` or `Authorization: Bearer <employee_token>` for employees with role `hr`, `security` or `pass_office`.
+- `POST /api/v1/setup/company` can create the first admin user when `owner_full_name`, `owner_login` and `owner_password` are passed. The response includes `admin_employee_token`.
+- Rooms own physical entry methods through `allowed_methods`: `qr`, `card`, `face`.
+- Employee access rules grant access to rooms. The scanner checks the method against the room.
+- Scanner UI can select a room by ID and call `GET /api/v1/scanner/rooms/{room_id}/methods` to display only methods available for that room.
+- `POST /api/v1/scanner/verify` accepts optional `room_id`. Card verification uses `{"method":"card","room_id":1,"raw_subject":"EMP-001"}` and matches `raw_subject` against employee `external_id` or internal `id`.
+
 Новый API-слой делает систему независимой от Telegram. Боты, веб-сканер и будущая админ-панель могут работать как клиенты одного сервера.
 
 ## Запуск

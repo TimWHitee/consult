@@ -10,7 +10,41 @@
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
-    <div class="app-shell">
+    <section id="authGate" class="auth-gate">
+      <div class="auth-card">
+        <div class="brand auth-brand">
+          <div class="brand-mark">S</div>
+          <div>
+            <div class="brand-name">SKUD Admin</div>
+            <div class="brand-subtitle">Вход в панель управления</div>
+          </div>
+        </div>
+        <div class="auth-tabs">
+          <button class="auth-tab active" data-auth-tab="login">Войти</button>
+          <button class="auth-tab" data-auth-tab="create">Создать организацию</button>
+        </div>
+        <div id="authNotice" class="notice hidden" role="status"></div>
+        <form id="adminLoginForm" class="auth-form active" data-auth-panel="login">
+          <label>API URL<input name="api_base" type="url" placeholder="http://localhost:8000" /></label>
+          <label>Slug компании<input name="company_slug" required placeholder="acme-office" /></label>
+          <label>Логин<input name="login" required autocomplete="username" /></label>
+          <label>Пароль<input name="password" type="password" required autocomplete="current-password" /></label>
+          <button class="button primary" type="submit">Войти</button>
+        </form>
+        <form id="orgCreateForm" class="auth-form" data-auth-panel="create">
+          <label>API URL<input name="api_base" type="url" placeholder="http://localhost:8000" /></label>
+          <label>Название организации<input name="name" required /></label>
+          <label>Slug<input name="slug" required pattern="[a-z0-9][a-z0-9-]{1,62}[a-z0-9]" placeholder="acme-office" /></label>
+          <label>ФИО администратора<input name="owner_full_name" required /></label>
+          <label>Логин администратора<input name="owner_login" required autocomplete="username" /></label>
+          <label>Пароль администратора<input name="owner_password" type="password" minlength="6" required autocomplete="new-password" /></label>
+          <label>Bootstrap token<input name="bootstrap_token" type="password" required value="bootstrap-change-me" /></label>
+          <button class="button primary" type="submit">Создать и войти</button>
+        </form>
+      </div>
+    </section>
+
+    <div id="appShell" class="app-shell hidden">
       <aside class="sidebar">
         <div class="brand">
           <div class="brand-mark">S</div>
@@ -26,6 +60,7 @@
           <button class="nav-item" data-view="access">Доступы</button>
           <button class="nav-item" data-view="scanners">Сканеры</button>
           <button class="nav-item" data-view="events">Журнал</button>
+          <button class="nav-item" data-view="reports">Отчеты</button>
           <button class="nav-item" data-view="setup">Настройка</button>
         </nav>
       </aside>
@@ -120,8 +155,26 @@
                   <select name="status">
                     <option value="active">active</option>
                     <option value="suspended">suspended</option>
+                    <option value="fired">fired</option>
                   </select>
                 </label>
+                <label>Роль
+                  <select name="role">
+                    <option value="employee">employee</option>
+                    <option value="hr">hr</option>
+                    <option value="security">security</option>
+                    <option value="pass_office">pass_office</option>
+                    <option value="cleaner">cleaner</option>
+                  </select>
+                </label>
+                <label>Уровень доступа<input name="access_level" type="number" min="1" max="3" value="1" /></label>
+                <label>Статус пропуска
+                  <select name="pass_status">
+                    <option value="active">active</option>
+                    <option value="blocked">blocked</option>
+                  </select>
+                </label>
+                <label>Причина блокировки<input name="pass_block_reason" /></label>
                 <label>Логин<input name="login" placeholder="email или табельный ID" /></label>
                 <label>Пароль<input name="password" type="password" placeholder="минимум 6 символов" /></label>
                 <button id="employeeSubmitBtn" class="button primary" type="submit">Добавить сотрудника</button>
@@ -181,12 +234,19 @@
                 <label>Название<input name="name" required /></label>
                 <label>Код<input name="code" required /></label>
                 <label>Вместимость<input name="capacity" type="number" min="0" /></label>
+                <label>Уровень помещения<input name="access_level" type="number" min="1" max="3" value="1" /></label>
                 <label>Статус
                   <select name="status">
                     <option value="active">active</option>
                     <option value="inactive">inactive</option>
                   </select>
                 </label>
+                <div class="method-group span-2">
+                  <label><input type="checkbox" name="method_qr" checked /> QR</label>
+                  <label><input type="checkbox" name="method_card" checked /> Card</label>
+                  <label><input type="checkbox" name="method_face" checked /> Face</label>
+                </div>
+                <label class="span-2"><input name="biometric_only" type="checkbox" /> Доступ только по биометрии</label>
                 <label class="span-2">Описание<textarea name="description"></textarea></label>
                 <button class="button primary span-2" type="submit">Добавить помещение</button>
               </form>
@@ -211,6 +271,8 @@
                     <th>ID</th>
                     <th>Название</th>
                     <th>Код</th>
+                    <th>Уровень</th>
+                    <th>Вход</th>
                     <th>Вместимость</th>
                     <th>Статус</th>
                     <th></th>
@@ -233,12 +295,18 @@
                 <label>Помещение<select name="room_id" data-room-select required></select></label>
                 <label>Начало<input name="valid_from" type="datetime-local" /></label>
                 <label>Окончание<input name="valid_until" type="datetime-local" /></label>
+                <label>Дни недели<input name="weekdays" placeholder="0,1,2,3,4" /></label>
+                <label>Время<input name="time_range" placeholder="09:00-18:00" /></label>
                 <div class="method-group span-2">
-                  <label><input type="checkbox" name="method_qr" checked /> QR</label>
-                  <label><input type="checkbox" name="method_face" checked /> Face</label>
                   <label><input type="checkbox" name="is_active" checked /> Активно</label>
                 </div>
                 <button class="button primary span-2" type="submit">Сохранить правило</button>
+                <div class="quick-grants span-2">
+                  <button class="button" type="button" id="grantAllRoomsBtn">Все помещения</button>
+                  <button class="button" type="button" id="grantQrRoomsBtn">Все с QR</button>
+                  <button class="button" type="button" id="grantCardRoomsBtn">Все с картой</button>
+                  <button class="button" type="button" id="grantFaceRoomsBtn">Все с лицом</button>
+                </div>
               </form>
             </section>
 
@@ -251,6 +319,35 @@
                 <label>Помещение<select id="ruleRoomFilter" data-room-select></select></label>
                 <button id="resetRuleFilters" class="button">Сбросить</button>
               </div>
+            </section>
+          </div>
+
+          <div class="layout-two">
+            <section class="panel">
+              <div class="panel-head">
+                <h2>Список 3 уровня</h2>
+              </div>
+              <form id="allowlistForm" class="form-grid">
+                <label>Помещение<select name="room_id" data-room-select required></select></label>
+                <label>Сотрудник<select name="employee_id" data-employee-select required></select></label>
+                <button class="button primary" type="submit">Добавить</button>
+                <button id="loadAllowlistBtn" class="button" type="button">Показать список</button>
+              </form>
+              <div id="allowlistOutput" class="stack"></div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-head">
+                <h2>Лимит помещения</h2>
+              </div>
+              <form id="limitOverrideForm" class="form-grid">
+                <label>Помещение<select name="room_id" data-room-select required></select></label>
+                <label>Лимит<input name="limit_value" type="number" min="0" required /></label>
+                <label>Начало<input name="valid_from" type="datetime-local" required /></label>
+                <label>Окончание<input name="valid_until" type="datetime-local" required /></label>
+                <label class="span-2">Причина<input name="reason" /></label>
+                <button class="button primary span-2" type="submit">Установить лимит</button>
+              </form>
             </section>
           </div>
 
@@ -300,6 +397,7 @@
                 </label>
                 <div class="method-group span-2">
                   <label><input type="checkbox" name="method_qr" checked /> QR</label>
+                  <label><input type="checkbox" name="method_card" checked /> Card</label>
                   <label><input type="checkbox" name="method_face" checked /> Face</label>
                 </div>
                 <button class="button primary span-2" type="submit">Создать сканер</button>
@@ -349,6 +447,8 @@
                   <option value="granted">granted</option>
                   <option value="denied">denied</option>
                 </select>
+                <input id="eventDateFrom" type="datetime-local" />
+                <input id="eventDateTo" type="datetime-local" />
                 <button id="loadEventsBtn" class="button">Применить</button>
               </div>
             </div>
@@ -367,6 +467,44 @@
                   </tr>
                 </thead>
                 <tbody id="eventsBody"></tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+
+        <section id="reports" class="view">
+          <div class="layout-two">
+            <section class="panel">
+              <div class="panel-head">
+                <h2>Период отчета</h2>
+              </div>
+              <div class="form-grid">
+                <label>Начало<input id="reportDateFrom" type="datetime-local" /></label>
+                <label>Окончание<input id="reportDateTo" type="datetime-local" /></label>
+                <button id="loadAttendanceReportBtn" class="button primary" type="button">Посещаемость</button>
+                <button id="loadRoomReportBtn" class="button" type="button">Загруженность</button>
+              </div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-head">
+                <h2>Anti-passback</h2>
+              </div>
+              <form id="securitySettingsForm" class="form-grid">
+                <label>Интервал блокировки, минут<input name="anti_passback_minutes" type="number" min="0" max="1440" value="15" /></label>
+                <button class="button primary" type="submit">Сохранить</button>
+              </form>
+            </section>
+          </div>
+
+          <section class="panel">
+            <div class="panel-head">
+              <h2 id="reportTitle">Отчет</h2>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead id="reportHead"></thead>
+                <tbody id="reportBody"></tbody>
               </table>
             </div>
           </section>

@@ -1,6 +1,8 @@
 const state = {
   apiBase: localStorage.getItem("skud.scanner.apiBase") || window.location.origin,
   scannerToken: localStorage.getItem("skud.scanner.token") || "",
+  roomId: localStorage.getItem("skud.scanner.roomId") || "",
+  roomMethods: [],
   qrStream: null,
   faceStream: null,
   qrTimer: null,
@@ -14,26 +16,70 @@ const $ = (selector) => document.querySelector(selector);
 function init() {
   $("#apiBaseInput").value = state.apiBase;
   $("#scannerTokenInput").value = state.scannerToken;
+  $("#roomIdInput").value = state.roomId;
   renderConnection();
   $("#saveConnectionBtn").addEventListener("click", saveConnection);
+  $("#loadRoomBtn").addEventListener("click", loadRoomMethods);
   $("#startQrCameraBtn").addEventListener("click", startQrCamera);
   $("#stopQrCameraBtn").addEventListener("click", stopQrCamera);
   $("#sendQrBtn").addEventListener("click", verifyQrPayload);
   $("#startFaceCameraBtn").addEventListener("click", startFaceCamera);
   $("#captureFaceBtn").addEventListener("click", captureFace);
   $("#sendFaceFileBtn").addEventListener("click", verifyFaceFile);
+  $("#sendCardBtn").addEventListener("click", verifyCard);
+  if (state.roomId && state.scannerToken) loadRoomMethods();
 }
 
 function saveConnection() {
   state.apiBase = cleanBase($("#apiBaseInput").value);
   state.scannerToken = $("#scannerTokenInput").value.trim();
+  state.roomId = $("#roomIdInput").value.trim();
   localStorage.setItem("skud.scanner.apiBase", state.apiBase);
   localStorage.setItem("skud.scanner.token", state.scannerToken);
+  localStorage.setItem("skud.scanner.roomId", state.roomId);
   renderConnection();
 }
 
 function renderConnection() {
-  $("#connectionStatus").textContent = state.scannerToken ? "Connected" : "Not connected";
+  $("#connectionStatus").textContent = state.scannerToken ? `Connected${state.roomId ? ` / room ${state.roomId}` : ""}` : "Not connected";
+  renderMethodPanels();
+}
+
+async function loadRoomMethods() {
+  saveConnection();
+  if (!state.scannerToken) {
+    renderResult({ decision: "denied", reason: "scanner_token_required" });
+    return;
+  }
+  if (!state.roomId) {
+    renderResult({ decision: "denied", reason: "room_id_required" });
+    return;
+  }
+  try {
+    const response = await fetch(`${state.apiBase}/api/v1/scanner/rooms/${encodeURIComponent(state.roomId)}/methods`, {
+      headers: { "X-Scanner-Token": state.scannerToken },
+    });
+    const text = await response.text();
+    const data = parseBody(text);
+    if (!response.ok) throw new Error(data?.detail || text || response.statusText);
+    state.roomMethods = data.allowed_methods || [];
+    $("#roomMethods").innerHTML = `
+      <span class="pill">${escapeHtml(data.room_name)} #${escapeHtml(data.room_id)}</span>
+      ${state.roomMethods.map((method) => `<span class="pill method-pill">${escapeHtml(method)}</span>`).join("")}
+    `;
+    renderMethodPanels();
+  } catch (error) {
+    state.roomMethods = [];
+    renderMethodPanels();
+    renderResult({ decision: "denied", reason: error.message });
+  }
+}
+
+function renderMethodPanels() {
+  const methods = state.roomMethods.length ? state.roomMethods : ["qr", "card", "face"];
+  document.querySelectorAll("[data-method-panel]").forEach((panel) => {
+    panel.classList.toggle("hidden", !methods.includes(panel.dataset.methodPanel));
+  });
 }
 
 async function startQrCamera() {
@@ -155,6 +201,15 @@ async function verifyFaceFile() {
   await verify({ method: "face", face_image_base64: await fileToDataUrl(file), raw_subject: "uploaded_face" });
 }
 
+async function verifyCard() {
+  const rawSubject = $("#cardSubjectInput").value.trim();
+  if (!rawSubject) {
+    renderResult({ decision: "denied", reason: "card_subject_required" });
+    return;
+  }
+  await verify({ method: "card", raw_subject: rawSubject });
+}
+
 async function verify(payload) {
   if (!state.scannerToken) {
     renderResult({ decision: "denied", reason: "scanner_token_required" });
@@ -167,7 +222,7 @@ async function verify(payload) {
         "Content-Type": "application/json",
         "X-Scanner-Token": state.scannerToken,
       },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({ ...payload, room_id: state.roomId ? Number(state.roomId) : undefined }),
     });
     const text = await response.text();
     const data = parseBody(text);
@@ -213,6 +268,15 @@ function parseBody(text) {
 
 function cleanBase(value) {
   return (value || window.location.origin).replace(/\/+$/, "");
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
 }
 
 init();

@@ -35,6 +35,7 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
+  overflow-x: hidden;
   background:
     radial-gradient(circle at 8% 10%, rgba(116, 199, 255, 0.42), transparent 34%),
     radial-gradient(circle at 86% 4%, rgba(160, 132, 255, 0.32), transparent 31%),
@@ -66,10 +67,77 @@ button {
 
 .app-shell {
   display: grid;
+  width: 100%;
   min-height: 100vh;
   grid-template-columns: 292px minmax(0, 1fr);
   gap: 24px;
   padding: 24px;
+}
+
+.auth-gate {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: 24px;
+}
+
+.auth-card {
+  width: min(720px, 100%);
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-xl);
+  background: var(--glass);
+  box-shadow: var(--shadow-soft), inset 0 1px 0 rgba(255, 255, 255, 0.78);
+  padding: clamp(22px, 4vw, 34px);
+  backdrop-filter: blur(28px) saturate(160%);
+  -webkit-backdrop-filter: blur(28px) saturate(160%);
+}
+
+.auth-brand {
+  padding-bottom: 18px;
+}
+
+.auth-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 8px 0 18px;
+  border: 1px solid var(--line-dark);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.42);
+  padding: 6px;
+}
+
+.auth-tab {
+  min-width: 0;
+  min-height: 44px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.auth-tab.active {
+  background: rgba(255, 255, 255, 0.78);
+  color: #215ecf;
+  box-shadow: 0 10px 24px rgba(32, 57, 102, 0.10);
+}
+
+.auth-form {
+  display: none;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.auth-form.active {
+  display: grid;
+}
+
+.auth-form .button {
+  grid-column: 1 / -1;
 }
 
 .sidebar,
@@ -113,6 +181,8 @@ button {
   color: white;
   font-size: 22px;
   font-weight: 800;
+  line-height: 1;
+  text-align: center;
 }
 
 .brand-name {
@@ -171,7 +241,7 @@ button {
 
 .topbar {
   display: grid;
-  grid-template-columns: minmax(280px, 1fr) minmax(380px, 720px);
+  grid-template-columns: minmax(280px, 1fr) minmax(420px, 720px);
   gap: 24px;
   align-items: center;
   border-radius: var(--radius-xl);
@@ -222,6 +292,7 @@ p {
 
 label {
   display: grid;
+  min-width: 0;
   gap: 8px;
   color: var(--muted);
   font-size: 12px;
@@ -258,6 +329,7 @@ textarea:focus {
 }
 
 .button {
+  min-width: 0;
   min-height: 46px;
   border: 1px solid rgba(52, 120, 246, 0.28);
   border-radius: 999px;
@@ -266,6 +338,7 @@ textarea:focus {
   padding: 11px 18px;
   font-size: 14px;
   font-weight: 800;
+  white-space: nowrap;
   transition: 180ms ease;
 }
 
@@ -364,6 +437,7 @@ textarea:focus {
 
 .panel-head {
   display: flex;
+  min-width: 0;
   min-height: 46px;
   align-items: center;
   justify-content: space-between;
@@ -415,6 +489,12 @@ textarea:focus {
 .method-group input {
   width: 16px;
   min-height: 16px;
+}
+
+.quick-grants {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
 }
 
 .table-wrap {
@@ -500,6 +580,7 @@ tr:last-child td {
 
 .row-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   justify-content: flex-end;
 }
@@ -593,6 +674,12 @@ tr:last-child td {
   font-weight: 700;
 }
 
+@media (max-width: 1280px) {
+  .topbar {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (max-width: 1160px) {
   .app-shell {
     grid-template-columns: 1fr;
@@ -607,7 +694,6 @@ tr:last-child td {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
-  .topbar,
   .layout-two,
   .metrics-grid {
     grid-template-columns: 1fr;
@@ -622,7 +708,9 @@ tr:last-child td {
   .connection,
   .filters,
   .form-grid,
+  .auth-form,
   .inline-form,
+  .quick-grants,
   .nav {
     grid-template-columns: 1fr;
   }
@@ -630,6 +718,10 @@ tr:last-child td {
   .panel-head {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .button {
+    white-space: normal;
   }
 
   .bar-row {

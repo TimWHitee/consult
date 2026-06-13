@@ -22,6 +22,8 @@
         <div class="connection">
           <input id="apiBaseInput" type="url" placeholder="http://localhost:8000" />
           <input id="scannerTokenInput" type="password" placeholder="Scanner token" />
+          <input id="roomIdInput" inputmode="numeric" placeholder="Room ID" />
+          <button class="button" id="loadRoomBtn">Load room</button>
           <button class="button primary" id="saveConnectionBtn">Save</button>
         </div>
       </header>
@@ -31,6 +33,7 @@
           <span class="eyebrow">Entry point</span>
           <h1>Scan and decide.</h1>
           <p>Быстрая проверка QR и лица с понятным результатом для турникета или поста охраны.</p>
+          <div id="roomMethods" class="method-strip"></div>
         </div>
         <div class="result-card" id="resultPanel">
           <span>Decision</span>
@@ -40,7 +43,7 @@
       </section>
 
       <section class="scanner-grid">
-        <section class="panel glass">
+        <section class="panel glass" data-method-panel="qr">
           <div class="panel-head">
             <h2>QR camera</h2>
             <span id="qrStatus" class="pill">idle</span>
@@ -57,7 +60,23 @@
           <button class="button primary" id="sendQrBtn">Verify QR payload</button>
         </section>
 
-        <section class="panel glass">
+        <section class="panel glass" data-method-panel="card">
+          <div class="panel-head">
+            <h2>Card entry</h2>
+            <span class="pill">card</span>
+          </div>
+          <div class="card-entry-visual" aria-hidden="true">
+            <div class="card-logo">
+              <span></span>
+              <span></span>
+            </div>
+            <strong>Вход по карте</strong>
+          </div>
+          <label>Employee ID or card ID<input id="cardSubjectInput" placeholder="employee id или external_id" /></label>
+          <button class="button primary big" id="sendCardBtn">Verify card</button>
+        </section>
+
+        <section class="panel glass" data-method-panel="face">
           <div class="panel-head">
             <h2>Face camera</h2>
             <span class="pill">photo</span>

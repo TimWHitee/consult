@@ -12,5 +12,6 @@ RUN pip install --no-cache-dir -r requirements-api.txt
 COPY api/ ./api/
 COPY admin/ ./admin/
 COPY employee/ ./employee/
+COPY webapp/ ./webapp/
 
 RUN mkdir -p storage

@@ -1,5 +1,14 @@
 # SKUD Frontend
 
+## Current UI behavior
+
+- Admin starts with a login/create-organization gate. Login uses company slug, login and password; organization creation can issue the first admin employee token.
+- Admin still supports manual `X-API-Key` connection in the setup section.
+- Room form controls physical entry methods: QR, card and face.
+- Employee access form grants rooms to employees. Bulk buttons grant all rooms, all QR rooms, all card rooms or all face rooms.
+- Scanner lets the operator enter room ID, loads that room methods, and shows only the matching QR/card/face panels.
+- Card scanner mode is implemented as a placeholder UI with card icon and sends `method=card` plus `raw_subject`.
+
 ## Latest functionality update
 
 - Admin employees table now supports direct edit and delete actions.

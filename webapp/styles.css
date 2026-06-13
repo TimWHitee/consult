@@ -63,7 +63,7 @@ button {
 
 .top {
   display: grid;
-  grid-template-columns: minmax(260px, 1fr) minmax(420px, 760px);
+  grid-template-columns: minmax(240px, 0.8fr) minmax(620px, 1.4fr);
   gap: 24px;
   align-items: center;
   border-radius: var(--radius-xl);
@@ -81,12 +81,17 @@ button {
   width: 56px;
   height: 56px;
   place-items: center;
+  align-items: center;
+  justify-items: center;
   border-radius: 20px;
   background: linear-gradient(135deg, var(--primary), var(--violet));
   box-shadow: var(--shadow-button);
   color: white;
+  font-family: var(--font-main);
   font-size: 22px;
   font-weight: 800;
+  line-height: 1;
+  text-align: center;
 }
 
 .brand strong,
@@ -108,8 +113,24 @@ button {
 
 .connection {
   display: grid;
-  grid-template-columns: minmax(150px, 1fr) minmax(190px, 1fr) auto;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 10px;
+  align-items: center;
+}
+
+.connection input:nth-child(1),
+.connection input:nth-child(2) {
+  grid-column: span 2;
+}
+
+.connection input:nth-child(3) {
+  grid-column: span 1;
+}
+
+.connection .button {
+  min-width: 0;
+  padding-inline: 14px;
+  white-space: nowrap;
 }
 
 input,
@@ -266,11 +287,28 @@ p {
 
 .scanner-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 360px;
+  grid-template-columns: repeat(3, minmax(280px, 1fr));
   gap: 24px;
 }
 
+.hidden {
+  display: none !important;
+}
+
+.method-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-top: 18px;
+}
+
+.method-pill {
+  color: #215ecf;
+}
+
 .panel {
+  min-width: 0;
   border-radius: var(--radius-xl);
   padding: 24px;
 }
@@ -317,6 +355,70 @@ video {
   margin: 14px 0;
 }
 
+.panel > .button:last-child {
+  width: 100%;
+  margin-top: 14px;
+}
+
+.card-entry-visual {
+  display: grid;
+  min-height: 260px;
+  place-items: center;
+  gap: 18px;
+  border: 1px solid var(--line-dark);
+  border-radius: var(--radius-lg);
+  background:
+    radial-gradient(circle at 22% 18%, rgba(76, 201, 240, 0.28), transparent 28%),
+    linear-gradient(145deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.38));
+  margin-bottom: 14px;
+  padding: 24px;
+  text-align: center;
+}
+
+.card-entry-visual strong {
+  color: var(--text);
+  font-size: 22px;
+  font-weight: 800;
+}
+
+.card-logo {
+  position: relative;
+  width: 142px;
+  height: 92px;
+  border-radius: 22px;
+  background: linear-gradient(135deg, var(--primary), var(--violet));
+  box-shadow: var(--shadow-button);
+}
+
+.card-logo::before {
+  position: absolute;
+  top: 20px;
+  left: 18px;
+  width: 34px;
+  height: 24px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.72);
+  content: "";
+}
+
+.card-logo span {
+  position: absolute;
+  right: 18px;
+  left: 18px;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.44);
+}
+
+.card-logo span:first-child {
+  bottom: 30px;
+}
+
+.card-logo span:last-child {
+  bottom: 16px;
+  width: 56%;
+}
+
 label {
   display: grid;
   gap: 8px;
@@ -327,8 +429,13 @@ label {
 
 .details-panel dl {
   display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
   margin: 18px 0 0;
+}
+
+.details-panel {
+  grid-column: 1 / -1;
 }
 
 dl div {
@@ -362,6 +469,14 @@ dd {
   .scanner-grid {
     grid-template-columns: 1fr;
   }
+
+  .details-panel {
+    grid-column: auto;
+  }
+
+  .details-panel dl {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 720px) {
@@ -372,5 +487,11 @@ dd {
   .connection,
   .actions {
     grid-template-columns: 1fr;
+  }
+
+  .connection input:nth-child(1),
+  .connection input:nth-child(2),
+  .connection input:nth-child(3) {
+    grid-column: auto;
   }
 }

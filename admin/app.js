@@ -1,6 +1,7 @@
 const state = {
   apiBase: localStorage.getItem("skud.apiBase") || window.location.origin,
   apiKey: localStorage.getItem("skud.apiKey") || "",
+  adminToken: localStorage.getItem("skud.adminToken") || "",
   company: null,
   employees: [],
   rooms: [],
@@ -28,13 +29,17 @@ const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selec
 function init() {
   $("#apiBaseInput").value = state.apiBase;
   $("#apiKeyInput").value = state.apiKey;
+  $$("[name='api_base']").forEach((input) => {
+    input.value = state.apiBase;
+  });
   bindNavigation();
   bindForms();
   renderConnection();
-  if (state.apiKey) {
+  renderAuthState();
+  if (state.apiKey || state.adminToken) {
     refreshAll();
   } else {
-    showView("setup");
+    showAuthGate();
   }
 }
 
@@ -51,20 +56,32 @@ function bindNavigation() {
 }
 
 function bindForms() {
+  $$(".auth-tab").forEach((button) => {
+    button.addEventListener("click", () => showAuthPanel(button.dataset.authTab));
+  });
+  $("#adminLoginForm").addEventListener("submit", adminLogin);
+  $("#orgCreateForm").addEventListener("submit", createOrganization);
+
   $("#saveConnectionBtn").addEventListener("click", () => {
     state.apiBase = cleanBase($("#apiBaseInput").value);
     state.apiKey = $("#apiKeyInput").value.trim();
+    state.adminToken = "";
     localStorage.setItem("skud.apiBase", state.apiBase);
     localStorage.setItem("skud.apiKey", state.apiKey);
+    localStorage.removeItem("skud.adminToken");
+    renderAuthState();
     refreshAll();
   });
 
   $("#clearConnectionBtn").addEventListener("click", () => {
     localStorage.removeItem("skud.apiKey");
+    localStorage.removeItem("skud.adminToken");
     state.apiKey = "";
+    state.adminToken = "";
     state.company = null;
     $("#apiKeyInput").value = "";
     renderConnection();
+    showAuthGate();
     showNotice("Подключение сброшено.");
   });
 
@@ -73,6 +90,13 @@ function bindForms() {
   $("#employeeCancelBtn").addEventListener("click", resetEmployeeForm);
   $("#roomForm").addEventListener("submit", createRoom);
   $("#accessForm").addEventListener("submit", saveAccessRule);
+  $("#grantAllRoomsBtn").addEventListener("click", () => grantRoomsByMethod("all"));
+  $("#grantQrRoomsBtn").addEventListener("click", () => grantRoomsByMethod("qr"));
+  $("#grantCardRoomsBtn").addEventListener("click", () => grantRoomsByMethod("card"));
+  $("#grantFaceRoomsBtn").addEventListener("click", () => grantRoomsByMethod("face"));
+  $("#allowlistForm").addEventListener("submit", addAllowlistEmployee);
+  $("#loadAllowlistBtn").addEventListener("click", loadAllowlist);
+  $("#limitOverrideForm").addEventListener("submit", createLimitOverride);
   $("#scannerForm").addEventListener("submit", createScanner);
   $("#faceForm").addEventListener("submit", uploadFacePhoto);
   $("#qrForm").addEventListener("submit", createQrPass);
@@ -85,17 +109,45 @@ function bindForms() {
     loadRules();
   });
   $("#loadEventsBtn").addEventListener("click", loadEvents);
+  $("#loadAttendanceReportBtn").addEventListener("click", loadAttendanceReport);
+  $("#loadRoomReportBtn").addEventListener("click", loadRoomReport);
+  $("#securitySettingsForm").addEventListener("submit", saveSecuritySettings);
 }
 
 function showView(viewId) {
   $$(".view").forEach((view) => view.classList.toggle("active", view.id === viewId));
   $$(".nav-item").forEach((item) => item.classList.toggle("active", item.dataset.view === viewId));
-  $("#viewTitle").textContent = titles[viewId][0];
-  $("#viewSubtitle").textContent = titles[viewId][1];
+  const title = titles[viewId] || [viewId, ""];
+  $("#viewTitle").textContent = title[0];
+  $("#viewSubtitle").textContent = title[1];
+  if (viewId === "reports") loadSecuritySettings();
 }
 
 function cleanBase(value) {
   return (value || window.location.origin).replace(/\/+$/, "");
+}
+
+function showAuthGate() {
+  $("#authGate").classList.remove("hidden");
+  $("#appShell").classList.add("hidden");
+}
+
+function showAppShell() {
+  $("#authGate").classList.add("hidden");
+  $("#appShell").classList.remove("hidden");
+}
+
+function renderAuthState() {
+  if (state.apiKey || state.adminToken) {
+    showAppShell();
+  } else {
+    showAuthGate();
+  }
+}
+
+function showAuthPanel(panel) {
+  $$(".auth-tab").forEach((button) => button.classList.toggle("active", button.dataset.authTab === panel));
+  $$("[data-auth-panel]").forEach((item) => item.classList.toggle("active", item.dataset.authPanel === panel));
 }
 
 async function api(path, options = {}) {
@@ -103,7 +155,9 @@ async function api(path, options = {}) {
   if (!(options.body instanceof FormData)) {
     headers.set("Content-Type", "application/json");
   }
-  if (state.apiKey) {
+  if (state.adminToken) {
+    headers.set("Authorization", `Bearer ${state.adminToken}`);
+  } else if (state.apiKey) {
     headers.set("X-API-Key", state.apiKey);
   }
 
@@ -168,9 +222,13 @@ async function loadEvents() {
   const employeeId = $("#eventEmployeeFilter")?.value;
   const roomId = $("#eventRoomFilter")?.value;
   const decision = $("#eventDecisionFilter")?.value;
+  const dateFrom = $("#eventDateFrom")?.value;
+  const dateTo = $("#eventDateTo")?.value;
   if (employeeId) params.set("employee_id", employeeId);
   if (roomId) params.set("room_id", roomId);
   if (decision) params.set("decision", decision);
+  if (dateFrom) params.set("date_from", localDateToIso(dateFrom));
+  if (dateTo) params.set("date_to", localDateToIso(dateTo));
   state.events = await api(`/api/v1/access-events?${params}`);
   renderEvents();
 }
@@ -200,7 +258,7 @@ function renderAll() {
 function renderConnection() {
   $("#connectionApi").textContent = state.apiBase || "-";
   $("#connectionCompany").textContent = state.company ? `${state.company.name} (${state.company.slug})` : "-";
-  $("#connectionKey").textContent = state.apiKey ? `${state.apiKey.slice(0, 14)}...` : "-";
+  $("#connectionKey").textContent = state.adminToken ? "employee session" : state.apiKey ? `${state.apiKey.slice(0, 14)}...` : "-";
   $("#companyLabel").textContent = state.company?.name || "Компания не выбрана";
 }
 
@@ -239,7 +297,7 @@ function renderEmployees() {
           <td>${escapeHtml(employee.external_id || "-")}</td>
           <td>${escapeHtml(employee.position || "-")}</td>
           <td>${escapeHtml([employee.email, employee.phone].filter(Boolean).join(" / ") || "-")}</td>
-          <td>${statusBadge(employee.status)}</td>
+          <td>${statusBadge(employee.status)} ${statusBadge(employee.pass_status || "active")} <span class="badge blue">L${employee.access_level || 1}</span></td>
           <td>
             <div class="row-actions">
               <button class="button" data-employee-edit="${employee.id}">Редактировать</button>
@@ -273,6 +331,8 @@ function renderRooms() {
           <td>${room.id}</td>
           <td><strong>${escapeHtml(room.name)}</strong><div class="muted">${escapeHtml(room.description || "")}</div></td>
           <td>${escapeHtml(room.code)}</td>
+          <td><span class="badge ${Number(room.access_level || 1) >= 3 ? "red" : "blue"}">L${room.access_level || 1}</span> ${Number(room.biometric_only || 0) ? '<span class="badge yellow">bio</span>' : ""}</td>
+          <td>${methodBadges(room.allowed_methods)}</td>
           <td>${room.capacity ?? "-"}</td>
           <td>${statusBadge(room.status)}</td>
           <td>
@@ -419,6 +479,167 @@ function renderOccupancyItem(room) {
   `;
 }
 
+function reportParams() {
+  const params = new URLSearchParams();
+  const from = $("#reportDateFrom")?.value;
+  const to = $("#reportDateTo")?.value;
+  if (from) params.set("date_from", localDateToIso(from));
+  if (to) params.set("date_to", localDateToIso(to));
+  return params.toString() ? `?${params}` : "";
+}
+
+async function loadAttendanceReport() {
+  try {
+    const rows = await api(`/api/v1/reports/employee-attendance${reportParams()}`);
+    $("#reportTitle").textContent = "Посещаемость сотрудников";
+    renderReport(
+      ["ID", "ФИО", "День", "Помещение", "Вход", "Выход", "Методы"],
+      rows.map((row) => [
+        row.employee_external_id || row.employee_id,
+        row.employee_full_name,
+        row.visit_day,
+        row.room_name || "-",
+        formatDate(row.first_entry_at) || "-",
+        formatDate(row.last_exit_at) || "-",
+        row.identification_methods || "-",
+      ]),
+    );
+  } catch (error) {
+    showNotice(error.message, true);
+  }
+}
+
+async function loadRoomReport() {
+  try {
+    const rows = await api(`/api/v1/reports/room-utilization${reportParams()}`);
+    $("#reportTitle").textContent = "Загруженность помещений";
+    renderReport(
+      ["ID", "Помещение", "День", "Людей", "Первый вход", "Последний выход", "Событий"],
+      rows.map((row) => [
+        row.room_id,
+        row.room_name,
+        row.day,
+        row.people_count,
+        formatDate(row.first_entry_at) || "-",
+        formatDate(row.last_exit_at) || "-",
+        row.access_event_count,
+      ]),
+    );
+  } catch (error) {
+    showNotice(error.message, true);
+  }
+}
+
+function renderReport(headers, rows) {
+  $("#reportHead").innerHTML = `<tr>${headers.map((header) => `<th>${escapeHtml(header)}</th>`).join("")}</tr>`;
+  $("#reportBody").innerHTML =
+    rows.map((row) => `<tr>${row.map((value) => `<td>${escapeHtml(value ?? "-")}</td>`).join("")}</tr>`).join("") ||
+    emptyRow(headers.length);
+}
+
+async function loadSecuritySettings() {
+  if (!state.apiKey && !state.adminToken) return;
+  try {
+    const settings = await api("/api/v1/settings/security");
+    $("#securitySettingsForm").elements.anti_passback_minutes.value = settings.anti_passback_minutes ?? 15;
+  } catch {
+    // Reports remain usable even if settings cannot be loaded.
+  }
+}
+
+async function saveSecuritySettings(event) {
+  event.preventDefault();
+  const form = new FormData(event.currentTarget);
+  try {
+    await api("/api/v1/settings/security", {
+      method: "PATCH",
+      body: JSON.stringify({ anti_passback_minutes: Number(form.get("anti_passback_minutes") || 15) }),
+    });
+    showNotice("Anti-passback interval saved.");
+  } catch (error) {
+    showNotice(error.message, true);
+  }
+}
+
+async function adminLogin(event) {
+  event.preventDefault();
+  const formElement = event.currentTarget;
+  const form = new FormData(formElement);
+  state.apiBase = cleanBase(form.get("api_base") || $("#apiBaseInput").value);
+  try {
+    const response = await fetch(`${state.apiBase}/api/v1/employee/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        company_slug: form.get("company_slug"),
+        login: form.get("login"),
+        password: form.get("password"),
+      }),
+    });
+    const text = await response.text();
+    const data = parseResponseBody(text);
+    if (!response.ok) throw new Error(data?.detail || text || response.statusText);
+    state.adminToken = data.employee_token;
+    state.apiKey = "";
+    localStorage.setItem("skud.apiBase", state.apiBase);
+    localStorage.setItem("skud.adminToken", state.adminToken);
+    localStorage.removeItem("skud.apiKey");
+    $("#apiBaseInput").value = state.apiBase;
+    $("#apiKeyInput").value = "";
+    renderAuthState();
+    await refreshAll();
+    showView("dashboard");
+    formElement.reset();
+  } catch (error) {
+    showNotice(error.message, true);
+  }
+}
+
+async function createOrganization(event) {
+  event.preventDefault();
+  const formElement = event.currentTarget;
+  const form = new FormData(formElement);
+  state.apiBase = cleanBase(form.get("api_base") || $("#apiBaseInput").value);
+  try {
+    const response = await fetch(`${state.apiBase}/api/v1/setup/company`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Bootstrap-Token": form.get("bootstrap_token"),
+      },
+      body: JSON.stringify({
+        name: form.get("name"),
+        slug: form.get("slug"),
+        owner_full_name: form.get("owner_full_name"),
+        owner_login: form.get("owner_login"),
+        owner_password: form.get("owner_password"),
+        owner_role: "hr",
+      }),
+    });
+    const text = await response.text();
+    const data = parseResponseBody(text);
+    if (!response.ok) throw new Error(data?.detail || text || response.statusText);
+    state.adminToken = data.admin_employee_token || "";
+    state.apiKey = state.adminToken ? "" : data.admin_api_key;
+    localStorage.setItem("skud.apiBase", state.apiBase);
+    if (state.adminToken) {
+      localStorage.setItem("skud.adminToken", state.adminToken);
+      localStorage.removeItem("skud.apiKey");
+    } else {
+      localStorage.setItem("skud.apiKey", state.apiKey);
+      localStorage.removeItem("skud.adminToken");
+    }
+    $("#apiBaseInput").value = state.apiBase;
+    $("#apiKeyInput").value = state.apiKey;
+    renderAuthState();
+    await refreshAll();
+    showView("dashboard");
+    formElement.reset();
+  } catch (error) {
+    showNotice(error.message, true);
+  }
+}
+
 async function setupCompany(event) {
   event.preventDefault();
   const formElement = event.currentTarget;
@@ -441,9 +662,12 @@ async function setupCompany(event) {
     const data = parseResponseBody(text);
     if (!response.ok) throw new Error(data?.detail || text || response.statusText);
     state.apiKey = data.admin_api_key;
+    state.adminToken = "";
     $("#apiKeyInput").value = state.apiKey;
     localStorage.setItem("skud.apiBase", state.apiBase);
     localStorage.setItem("skud.apiKey", state.apiKey);
+    localStorage.removeItem("skud.adminToken");
+    renderAuthState();
     formElement.reset();
     await refreshAll();
     showView("dashboard");
@@ -464,6 +688,10 @@ async function saveEmployee(event) {
     email: form.get("email"),
     phone: form.get("phone"),
     status: form.get("status"),
+    role: form.get("role"),
+    access_level: Number(form.get("access_level") || 1),
+    pass_status: form.get("pass_status"),
+    pass_block_reason: form.get("pass_block_reason"),
   });
   const credentials = cleanPayload({
     login: form.get("login"),
@@ -500,6 +728,13 @@ async function createRoom(event) {
   const formElement = event.currentTarget;
   const payload = formObject(formElement);
   if (payload.capacity === "") delete payload.capacity;
+  if (payload.capacity !== undefined) payload.capacity = Number(payload.capacity);
+  payload.access_level = Number(payload.access_level || 1);
+  payload.allowed_methods = methodsFromForm(formElement);
+  payload.biometric_only = Boolean(payload.biometric_only);
+  delete payload.method_qr;
+  delete payload.method_card;
+  delete payload.method_face;
   await submitAndRefresh("/api/v1/rooms", payload, formElement);
 }
 
@@ -507,20 +742,61 @@ async function saveAccessRule(event) {
   event.preventDefault();
   const formElement = event.currentTarget;
   const form = new FormData(formElement);
-  const allowed = methodsFromForm(formElement);
+  const roomId = Number(form.get("room_id"));
+  const allowed = roomMethods(roomId);
+  const schedule = scheduleFromForm(form);
   if (!allowed.length) {
     showNotice("Выберите хотя бы один метод доступа.", true);
     return;
   }
   const payload = {
     employee_id: Number(form.get("employee_id")),
-    room_id: Number(form.get("room_id")),
+    room_id: roomId,
     allowed_methods: allowed,
     valid_from: localDateToIso(form.get("valid_from")),
     valid_until: localDateToIso(form.get("valid_until")),
+    schedule,
     is_active: form.get("is_active") === "on",
   };
   await submitAndRefresh("/api/v1/access-rules", payload, formElement);
+}
+
+async function grantRoomsByMethod(method) {
+  const formElement = $("#accessForm");
+  const form = new FormData(formElement);
+  const employeeId = Number(form.get("employee_id"));
+  if (!employeeId) {
+    showNotice("Выберите сотрудника.", true);
+    return;
+  }
+  const rooms = state.rooms.filter((room) => method === "all" || roomMethods(room.id).includes(method));
+  if (!rooms.length) {
+    showNotice("Нет помещений для выбранного фильтра.", true);
+    return;
+  }
+  const schedule = scheduleFromForm(form);
+  try {
+    await Promise.all(
+      rooms.map((room) =>
+        api("/api/v1/access-rules", {
+          method: "POST",
+          body: JSON.stringify({
+            employee_id: employeeId,
+            room_id: Number(room.id),
+            allowed_methods: roomMethods(room.id),
+            valid_from: localDateToIso(form.get("valid_from")),
+            valid_until: localDateToIso(form.get("valid_until")),
+            schedule,
+            is_active: form.get("is_active") === "on",
+          }),
+        }),
+      ),
+    );
+    await refreshAll();
+    showNotice(`Доступ выдан: ${rooms.length} помещений.`);
+  } catch (error) {
+    showNotice(error.message, true);
+  }
 }
 
 async function createScanner(event) {
@@ -582,6 +858,84 @@ async function createQrPass(event) {
   }
 }
 
+async function addAllowlistEmployee(event) {
+  event.preventDefault();
+  const formElement = event.currentTarget;
+  const form = new FormData(formElement);
+  const roomId = form.get("room_id");
+  try {
+    await api(`/api/v1/rooms/${roomId}/level3-allowlist`, {
+      method: "POST",
+      body: JSON.stringify({ employee_id: Number(form.get("employee_id")) }),
+    });
+    await loadAllowlist();
+    showNotice("Сотрудник добавлен в список 3 уровня.");
+  } catch (error) {
+    showNotice(error.message, true);
+  }
+}
+
+async function loadAllowlist() {
+  const form = $("#allowlistForm");
+  const roomId = new FormData(form).get("room_id");
+  if (!roomId) return;
+  try {
+    const rows = await api(`/api/v1/rooms/${roomId}/level3-allowlist`);
+    $("#allowlistOutput").innerHTML =
+      rows
+        .map(
+          (item) => `
+            <div class="occupancy-item">
+              <div>
+                <div class="occupancy-name">${escapeHtml(item.full_name)}</div>
+                <div class="occupancy-people">#${item.employee_id} ${escapeHtml(item.external_id || "")}</div>
+              </div>
+              <button class="button danger" data-allowlist-remove="${item.employee_id}" data-room-id="${roomId}">Удалить</button>
+            </div>
+          `,
+        )
+        .join("") || emptyState("Список пуст");
+    $$("[data-allowlist-remove]").forEach((button) => {
+      button.addEventListener("click", () => removeAllowlistEmployee(button.dataset.roomId, button.dataset.allowlistRemove));
+    });
+  } catch (error) {
+    showNotice(error.message, true);
+  }
+}
+
+async function removeAllowlistEmployee(roomId, employeeId) {
+  try {
+    await api(`/api/v1/rooms/${roomId}/level3-allowlist/${employeeId}`, { method: "DELETE" });
+    await loadAllowlist();
+    showNotice("Сотрудник удален из списка 3 уровня.");
+  } catch (error) {
+    showNotice(error.message, true);
+  }
+}
+
+async function createLimitOverride(event) {
+  event.preventDefault();
+  const formElement = event.currentTarget;
+  const form = new FormData(formElement);
+  const roomId = form.get("room_id");
+  try {
+    await api(`/api/v1/rooms/${roomId}/limit-overrides`, {
+      method: "POST",
+      body: JSON.stringify({
+        limit_value: Number(form.get("limit_value")),
+        valid_from: localDateToIso(form.get("valid_from")),
+        valid_until: localDateToIso(form.get("valid_until")),
+        reason: form.get("reason"),
+      }),
+    });
+    formElement.reset();
+    await refreshAll();
+    showNotice("Лимит помещения установлен.");
+  } catch (error) {
+    showNotice(error.message, true);
+  }
+}
+
 function editEmployee(id) {
   const employee = state.employees.find((item) => String(item.id) === String(id));
   if (!employee) {
@@ -596,6 +950,10 @@ function editEmployee(id) {
   form.elements.email.value = employee.email || "";
   form.elements.phone.value = employee.phone || "";
   form.elements.status.value = employee.status || "active";
+  form.elements.role.value = employee.role || "employee";
+  form.elements.access_level.value = employee.access_level || 1;
+  form.elements.pass_status.value = employee.pass_status || "active";
+  form.elements.pass_block_reason.value = employee.pass_block_reason || "";
   form.elements.login.value = "";
   form.elements.password.value = "";
   $("#employeeFormTitle").textContent = "Редактирование сотрудника";
@@ -671,9 +1029,32 @@ function cleanPayload(payload) {
 
 function methodsFromForm(form) {
   const methods = [];
-  if ($("[name='method_qr']", form).checked) methods.push("qr");
-  if ($("[name='method_face']", form).checked) methods.push("face");
+  if ($("[name='method_qr']", form)?.checked) methods.push("qr");
+  if ($("[name='method_card']", form)?.checked) methods.push("card");
+  if ($("[name='method_face']", form)?.checked) methods.push("face");
   return methods;
+}
+
+function roomMethods(roomId) {
+  const room = state.rooms.find((item) => Number(item.id) === Number(roomId));
+  return room?.allowed_methods?.length ? room.allowed_methods : ["qr", "card", "face"];
+}
+
+function scheduleFromForm(form) {
+  const weekdays = String(form.get("weekdays") || "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .map(Number)
+    .filter((value) => Number.isInteger(value) && value >= 0 && value <= 6);
+  const timeRange = String(form.get("time_range") || "").split("-");
+  const schedule = {};
+  if (weekdays.length) schedule.weekdays = weekdays;
+  if (timeRange.length === 2 && timeRange[0].trim() && timeRange[1].trim()) {
+    schedule.start_time = timeRange[0].trim();
+    schedule.end_time = timeRange[1].trim();
+  }
+  return Object.keys(schedule).length ? schedule : null;
 }
 
 function localDateToIso(value) {
@@ -690,7 +1071,7 @@ function roomName(id) {
 }
 
 function statusBadge(status) {
-  const color = status === "active" ? "green" : status === "suspended" || status === "inactive" ? "red" : "blue";
+  const color = status === "active" ? "green" : status === "suspended" || status === "inactive" || status === "blocked" || status === "fired" ? "red" : "blue";
   return `<span class="badge ${color}">${escapeHtml(status)}</span>`;
 }
 
@@ -699,7 +1080,7 @@ function decisionBadge(decision) {
 }
 
 function methodBadges(methods = []) {
-  return methods.map((method) => `<span class="badge ${method === "face" ? "yellow" : "blue"}">${escapeHtml(method)}</span>`).join(" ");
+  return methods.map((method) => `<span class="badge ${method === "face" ? "yellow" : method === "card" ? "green" : "blue"}">${escapeHtml(method)}</span>`).join(" ");
 }
 
 function formatDate(value) {
@@ -733,7 +1114,7 @@ function escapeHtml(value) {
 }
 
 function showNotice(message, isError = false) {
-  const notice = $("#notice");
+  const notice = $("#authGate")?.classList.contains("hidden") ? $("#notice") : $("#authNotice");
   notice.textContent = message;
   notice.classList.toggle("error", isError);
   notice.classList.remove("hidden");
