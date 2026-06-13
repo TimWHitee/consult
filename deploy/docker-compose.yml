@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   api:
     build:
@@ -7,34 +5,19 @@ services:
       dockerfile: deploy/Dockerfile
     container_name: skud_api
     restart: unless-stopped
-    working_dir: /app
     command: uvicorn api.app:app --host 0.0.0.0 --port 8000
     ports:
       - "8000:8000"
     volumes:
-      - ..:/app
+      - skud_data:/data
+      - skud_storage:/app/storage
     environment:
-      SKUD_API_DB_PATH: /app/skud_api.db
+      SKUD_API_DB_PATH: /data/skud_api.db
       SKUD_STORAGE_DIR: /app/storage
+      SKUD_BOOTSTRAP_TOKEN: ${SKUD_BOOTSTRAP_TOKEN}
+      SKUD_QR_SECRET: ${SKUD_QR_SECRET}
+      SKUD_UNLOCK_SECONDS: ${SKUD_UNLOCK_SECONDS:-5}
 
-  creator:
-    build:
-      context: ..
-      dockerfile: deploy/Dockerfile
-    container_name: skud_creator
-    restart: unless-stopped
-    working_dir: /app/creator
-    command: python main.py
-    volumes:
-      - ..:/app
-
-  scanner:
-    build:
-      context: ..
-      dockerfile: deploy/Dockerfile
-    container_name: skud_scanner
-    restart: unless-stopped
-    working_dir: /app/scanner
-    command: python main.py
-    volumes:
-      - ..:/app
+volumes:
+  skud_data:
+  skud_storage:
